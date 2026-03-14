@@ -17,15 +17,9 @@ const LICENSE_FILENAMES = new Set([
   "package/COPYING",
 ]);
 
-const README_FILENAMES = new Set([
-  "package/README.md",
-  "package/README",
-  "package/README.txt",
-]);
+const README_FILENAMES = new Set(["package/README.md", "package/README", "package/README.txt"]);
 
-export async function extractLicenseFiles(
-  tarballUrl: string,
-): Promise<LicenseFileResult> {
+export async function extractLicenseFiles(tarballUrl: string): Promise<LicenseFileResult> {
   try {
     const response = await fetchWithRetry(tarballUrl);
     if (!response.ok) {
@@ -47,7 +41,10 @@ export async function extractLicenseFiles(
       const listOutput = await new Response(listProc.stdout).text();
       await listProc.exited;
 
-      const files = listOutput.split("\n").map((f) => f.trim()).filter(Boolean);
+      const files = listOutput
+        .split("\n")
+        .map((f) => f.trim())
+        .filter(Boolean);
 
       // Find license and readme files (case-insensitive matching)
       let licenseFilePath: string | null = null;
@@ -94,7 +91,7 @@ export async function extractLicenseFiles(
     } finally {
       // Clean up temp file
       try {
-        const { unlinkSync } = require("fs");
+        const { unlinkSync } = require("node:fs");
         unlinkSync(tmpFile);
       } catch {
         // ignore
@@ -108,10 +105,7 @@ export async function extractLicenseFiles(
   }
 }
 
-async function extractSingleFile(
-  tarball: string,
-  filePath: string,
-): Promise<string | null> {
+async function extractSingleFile(tarball: string, filePath: string): Promise<string | null> {
   try {
     const proc = Bun.spawn(["tar", "-xzf", tarball, "-O", filePath], {
       stdout: "pipe",
@@ -130,7 +124,10 @@ export function detectLicenseFromText(text: string): string | null {
 
   // Order matters: check more specific patterns first
 
-  if (upper.includes("APACHE LICENSE, VERSION 2.0") || upper.includes("APACHE LICENSE\n                           VERSION 2.0")) {
+  if (
+    upper.includes("APACHE LICENSE, VERSION 2.0") ||
+    upper.includes("APACHE LICENSE\n                           VERSION 2.0")
+  ) {
     return "Apache-2.0";
   }
 
@@ -151,22 +148,43 @@ export function detectLicenseFromText(text: string): string | null {
     return "GPL-3.0";
   }
 
-  if (upper.includes("BSD 3-CLAUSE") || upper.includes("BSD 3 CLAUSE") || upper.includes("THREE-CLAUSE BSD") || upper.includes("REDISTRIBUTIONS OF SOURCE CODE MUST RETAIN")) {
-    if (upper.includes("2-CLAUSE") || upper.includes("TWO-CLAUSE") || upper.includes("SIMPLIFIED BSD")) {
+  if (
+    upper.includes("BSD 3-CLAUSE") ||
+    upper.includes("BSD 3 CLAUSE") ||
+    upper.includes("THREE-CLAUSE BSD") ||
+    upper.includes("REDISTRIBUTIONS OF SOURCE CODE MUST RETAIN")
+  ) {
+    if (
+      upper.includes("2-CLAUSE") ||
+      upper.includes("TWO-CLAUSE") ||
+      upper.includes("SIMPLIFIED BSD")
+    ) {
       return "BSD-2-Clause";
     }
     return "BSD-3-Clause";
   }
 
-  if (upper.includes("BSD 2-CLAUSE") || upper.includes("BSD 2 CLAUSE") || upper.includes("SIMPLIFIED BSD") || upper.includes("TWO-CLAUSE BSD") || upper.includes("FREEBSD LICENSE")) {
+  if (
+    upper.includes("BSD 2-CLAUSE") ||
+    upper.includes("BSD 2 CLAUSE") ||
+    upper.includes("SIMPLIFIED BSD") ||
+    upper.includes("TWO-CLAUSE BSD") ||
+    upper.includes("FREEBSD LICENSE")
+  ) {
     return "BSD-2-Clause";
   }
 
-  if (upper.includes("MIT LICENSE") || upper.includes("PERMISSION IS HEREBY GRANTED, FREE OF CHARGE")) {
+  if (
+    upper.includes("MIT LICENSE") ||
+    upper.includes("PERMISSION IS HEREBY GRANTED, FREE OF CHARGE")
+  ) {
     return "MIT";
   }
 
-  if (upper.includes("ISC LICENSE") || (upper.includes("PERMISSION TO USE, COPY, MODIFY") && upper.includes("ISC"))) {
+  if (
+    upper.includes("ISC LICENSE") ||
+    (upper.includes("PERMISSION TO USE, COPY, MODIFY") && upper.includes("ISC"))
+  ) {
     return "ISC";
   }
 
@@ -174,7 +192,10 @@ export function detectLicenseFromText(text: string): string | null {
     return "Unlicense";
   }
 
-  if (upper.includes("MOZILLA PUBLIC LICENSE VERSION 2.0") || upper.includes("MOZILLA PUBLIC LICENSE, VERSION 2.0")) {
+  if (
+    upper.includes("MOZILLA PUBLIC LICENSE VERSION 2.0") ||
+    upper.includes("MOZILLA PUBLIC LICENSE, VERSION 2.0")
+  ) {
     return "MPL-2.0";
   }
 

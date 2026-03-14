@@ -3,6 +3,7 @@ export interface NpmPackument {
   "dist-tags": Record<string, string>;
   versions: Record<string, NpmVersionInfo>;
   time?: Record<string, string>;
+  maintainers?: Array<{ name: string; email?: string }>;
 }
 
 export interface NpmVersionInfo {
@@ -12,6 +13,7 @@ export interface NpmVersionInfo {
   devDependencies?: Record<string, string>;
   license?: string | { type: string; url?: string } | Array<{ type: string; url?: string }>;
   deprecated?: string;
+  scripts?: Record<string, string>;
   dist?: {
     tarball: string;
     integrity?: string;

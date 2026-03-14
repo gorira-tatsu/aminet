@@ -1,0 +1,53 @@
+name: "ami Supply Chain Review"
+description: "Analyze dependency changes in pull requests for security, license, and vulnerability issues"
+inputs:
+  path:
+    description: "Path to package.json"
+    default: "package.json"
+  depth:
+    description: "Maximum dependency depth"
+    required: false
+  deny-license:
+    description: "Comma-separated list of SPDX IDs to deny"
+    required: false
+  fail-on-vuln:
+    description: "Exit non-zero on vulnerabilities at or above severity"
+    required: false
+  security:
+    description: "Enable security deep analysis"
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+
+    - name: Install ami
+      shell: bash
+      run: npm install -g ami@latest
+
+    - name: Run ami review
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        ARGS="${{ inputs.path }} --base ${{ github.event.pull_request.base.sha }}"
+        ARGS="$ARGS --pr-number ${{ github.event.pull_request.number }}"
+        ARGS="$ARGS --repo ${{ github.repository }}"
+        ARGS="$ARGS --update-comment"
+
+        if [ -n "${{ inputs.depth }}" ]; then
+          ARGS="$ARGS --depth ${{ inputs.depth }}"
+        fi
+        if [ -n "${{ inputs.deny-license }}" ]; then
+          ARGS="$ARGS --deny-license ${{ inputs.deny-license }}"
+        fi
+        if [ -n "${{ inputs.fail-on-vuln }}" ]; then
+          ARGS="$ARGS --fail-on-vuln ${{ inputs.fail-on-vuln }}"
+        fi
+        if [ "${{ inputs.security }}" = "true" ]; then
+          ARGS="$ARGS --security"
+        fi
+
+        ami review $ARGS

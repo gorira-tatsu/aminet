@@ -5,7 +5,6 @@
 export class TokenBucket {
   private tokens: number;
   private lastRefill: number;
-  private waitQueue: Array<() => void> = [];
 
   constructor(
     private readonly maxTokens: number,

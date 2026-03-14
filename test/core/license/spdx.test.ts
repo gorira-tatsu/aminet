@@ -1,15 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import {
-  classifyLicense,
-  parseLicenseComponents,
-} from "../../../src/core/license/spdx.js";
+import { parseLicenseComponents } from "../../../src/core/license/spdx.js";
 
 describe("parseLicenseComponents", () => {
   test("parses single license", () => {
     const result = parseLicenseComponents("MIT");
-    expect(result).toEqual([
-      { spdxId: "MIT", category: "permissive" },
-    ]);
+    expect(result).toEqual([{ spdxId: "MIT", category: "permissive" }]);
   });
 
   test("parses OR expression", () => {

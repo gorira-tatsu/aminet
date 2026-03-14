@@ -7,4 +7,5 @@ export interface AmiConfig {
   depth?: number;
   concurrency?: number;
   deepLicenseCheck?: boolean;
+  security?: boolean;
 }

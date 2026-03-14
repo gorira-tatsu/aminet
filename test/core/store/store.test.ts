@@ -1,11 +1,19 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { closeDatabase, setDatabase } from "../../../src/core/store/database.js";
+import { clearAllStores, getStoreStats } from "../../../src/core/store/index.js";
 import { runMigrations } from "../../../src/core/store/migrations.js";
-import { setDatabase, closeDatabase } from "../../../src/core/store/database.js";
-import { getCachedPackument, cachePackument } from "../../../src/core/store/packument-store.js";
-import { getCachedPackage, cachePackage, cachePackageBatch } from "../../../src/core/store/package-store.js";
-import { getCachedVulnerabilities, cacheVulnerabilities, cacheVulnerabilityBatch } from "../../../src/core/store/vulnerability-store.js";
-import { getStoreStats, clearAllStores } from "../../../src/core/store/index.js";
+import {
+  cachePackage,
+  cachePackageBatch,
+  getCachedPackage,
+} from "../../../src/core/store/package-store.js";
+import { cachePackument, getCachedPackument } from "../../../src/core/store/packument-store.js";
+import {
+  cacheVulnerabilities,
+  cacheVulnerabilityBatch,
+  getCachedVulnerabilities,
+} from "../../../src/core/store/vulnerability-store.js";
 
 let db: Database;
 
@@ -61,8 +69,20 @@ describe("package store", () => {
 
   test("batch insert", () => {
     cachePackageBatch([
-      { name: "a", version: "1.0.0", license: "MIT", licenseCategory: "permissive", dependencies: {} },
-      { name: "b", version: "2.0.0", license: "ISC", licenseCategory: "permissive", dependencies: {} },
+      {
+        name: "a",
+        version: "1.0.0",
+        license: "MIT",
+        licenseCategory: "permissive",
+        dependencies: {},
+      },
+      {
+        name: "b",
+        version: "2.0.0",
+        license: "ISC",
+        licenseCategory: "permissive",
+        dependencies: {},
+      },
     ]);
 
     expect(getCachedPackage("a", "1.0.0")).not.toBeNull();
@@ -103,9 +123,7 @@ describe("vulnerability store", () => {
   });
 
   test("caches and retrieves vulns", () => {
-    const vulns = [
-      { id: "GHSA-123", summary: "XSS vulnerability" },
-    ];
+    const vulns = [{ id: "GHSA-123", summary: "XSS vulnerability" }];
     cacheVulnerabilities("vuln-pkg", "1.0.0", vulns as any);
     const result = getCachedVulnerabilities("vuln-pkg", "1.0.0");
     expect(result).toHaveLength(1);

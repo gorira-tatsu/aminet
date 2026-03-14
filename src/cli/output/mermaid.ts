@@ -13,7 +13,9 @@ export function renderMermaid(
   // Map node IDs to short aliases (Mermaid needs simple IDs)
   const nodeIds = Array.from(graph.nodes.keys());
   const aliasMap = new Map<string, string>();
-  nodeIds.forEach((id, i) => aliasMap.set(id, `N${i}`));
+  for (let i = 0; i < nodeIds.length; i++) {
+    aliasMap.set(nodeIds[i], `N${i}`);
+  }
 
   const lines: string[] = [];
   lines.push("graph LR");
@@ -55,10 +57,7 @@ export function renderMermaid(
   console.log(lines.join("\n"));
 }
 
-function getMermaidColor(
-  category: string,
-  vulnCount: number,
-): string | null {
+function getMermaidColor(category: string, vulnCount: number): string | null {
   if (vulnCount > 0) return "#FF6B6B";
   if (category === "copyleft") return "#FF6B6B";
   if (category === "weak-copyleft" || category === "unknown") return "#FFD93D";

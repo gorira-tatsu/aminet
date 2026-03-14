@@ -1,8 +1,8 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadConfig } from "../../../src/core/config/loader.js";
-import { writeFileSync, mkdirSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
 
 describe("loadConfig", () => {
   let tmpDir: string;
@@ -27,10 +27,7 @@ describe("loadConfig", () => {
       depth: 5,
       concurrency: 3,
     };
-    writeFileSync(
-      join(tmpDir, "ami.config.json"),
-      JSON.stringify(configData),
-    );
+    writeFileSync(join(tmpDir, "ami.config.json"), JSON.stringify(configData));
 
     const config = loadConfig(tmpDir);
     expect(config.denyLicenses).toEqual(["GPL-3.0"]);
@@ -55,10 +52,7 @@ describe("loadConfig", () => {
       concurrency: 5,
       deepLicenseCheck: true,
     };
-    writeFileSync(
-      join(tmpDir, "ami.config.json"),
-      JSON.stringify(configData),
-    );
+    writeFileSync(join(tmpDir, "ami.config.json"), JSON.stringify(configData));
 
     const config = loadConfig(tmpDir);
     expect(config.denyLicenses).toEqual(["GPL-3.0", "AGPL-3.0"]);

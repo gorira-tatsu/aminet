@@ -1,8 +1,5 @@
+import { getContextNotes } from "../../core/license/context-notes.js";
 import type { Report } from "../../core/report/types.js";
-import {
-  getContextNotes,
-  type LicenseContextNote,
-} from "../../core/license/context-notes.js";
 
 export function renderNotices(report: Report): void {
   const lines: string[] = [];
@@ -33,9 +30,7 @@ export function renderNotices(report: Report): void {
   lines.push("");
 
   // Context notes
-  const allLicenses = report.entries
-    .map((e) => e.license)
-    .filter((l): l is string => l !== null);
+  const allLicenses = report.entries.map((e) => e.license).filter((l): l is string => l !== null);
   const contextNotes = getContextNotes(allLicenses);
   if (contextNotes.length > 0) {
     lines.push("LICENSE NOTES");
@@ -57,9 +52,7 @@ export function renderNotices(report: Report): void {
 }
 
 export function renderNoticesJson(report: Report): void {
-  const allLicenses = report.entries
-    .map((e) => e.license)
-    .filter((l): l is string => l !== null);
+  const allLicenses = report.entries.map((e) => e.license).filter((l): l is string => l !== null);
   const contextNotes = getContextNotes(allLicenses);
 
   const output = {

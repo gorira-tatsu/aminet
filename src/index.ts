@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import { analyzeCommand } from "./cli/commands/analyze.js";
-import { cacheStatsCommand, cacheClearCommand } from "./cli/commands/cache.js";
+import { cacheClearCommand, cacheStatsCommand } from "./cli/commands/cache.js";
+import { reviewCommand } from "./cli/commands/review.js";
 
 const program = new Command();
 
@@ -20,11 +21,7 @@ program
   .option("--dot", "Output as Graphviz DOT format")
   .option("--mermaid", "Output as Mermaid diagram")
   .option("-d, --depth <number>", "Maximum dependency depth", parseInt)
-  .option(
-    "-c, --concurrency <number>",
-    "Maximum concurrent requests",
-    parseInt,
-  )
+  .option("-c, --concurrency <number>", "Maximum concurrent requests", parseInt)
   .option("--dev", "Include devDependencies")
   .option("--file", "Treat argument as path to package.json")
   .option("--no-cache", "Skip cache reads (still writes)")
@@ -43,10 +40,11 @@ program
     "Comma-separated list of SPDX IDs to deny (e.g., GPL-3.0,AGPL-3.0)",
   )
   .option("--notices", "Output third-party license attribution list")
-  .option(
-    "--deep-license-check",
-    "Verify LICENSE files from npm tarballs",
-  )
+  .option("--deep-license-check", "Verify LICENSE files from npm tarballs")
+  .option("--cyclonedx", "Output CycloneDX 1.5 SBOM")
+  .option("--spdx", "Output SPDX 2.3 SBOM")
+  .option("--security", "Enable security deep analysis")
+  .option("--license-report", "Enable GPL contamination trace and compatibility check")
   .action(analyzeCommand);
 
 // ci command (alias for analyze --ci --json)
@@ -57,35 +55,37 @@ program
   .option("--file", "Treat argument as path to package.json")
   .option("-d, --depth <number>", "Maximum dependency depth", parseInt)
   .option("--dev", "Include devDependencies")
-  .option(
-    "--fail-on-vuln <severity>",
-    "Exit non-zero on vulnerabilities (default: high)",
-  )
-  .option(
-    "--fail-on-license <category>",
-    "Exit non-zero on license category",
-  )
-  .option(
-    "--deny-license <licenses>",
-    "Comma-separated list of SPDX IDs to deny",
-  )
+  .option("--fail-on-vuln <severity>", "Exit non-zero on vulnerabilities (default: high)")
+  .option("--fail-on-license <category>", "Exit non-zero on license category")
+  .option("--deny-license <licenses>", "Comma-separated list of SPDX IDs to deny")
+  .option("--security", "Enable security deep analysis")
   .action((target, opts) => {
     return analyzeCommand(target, { ...opts, ci: true, json: true });
   });
 
+// review command (PR review bot)
+program
+  .command("review")
+  .description("Compare dependency changes between two versions for PR review")
+  .argument("<path>", "Path to package.json")
+  .option("--base <ref>", "Base git ref or file path (default: HEAD~1)")
+  .option("--head <ref>", "Head git ref or file path (default: working tree)")
+  .option("--pr-number <number>", "GitHub PR number for comment posting")
+  .option("--repo <owner/name>", "GitHub repository (e.g., user/repo)")
+  .option("--update-comment", "Update existing ami comment instead of creating new")
+  .option("-d, --depth <number>", "Maximum dependency depth", parseInt)
+  .option("-c, --concurrency <number>", "Maximum concurrent requests", parseInt)
+  .option("--dev", "Include devDependencies")
+  .option("--no-cache", "Skip cache reads")
+  .option("-v, --verbose", "Verbose logging")
+  .option("--ci", "CI mode (no spinner)")
+  .action(reviewCommand);
+
 // cache commands
-const cache = program
-  .command("cache")
-  .description("Manage the local cache");
+const cache = program.command("cache").description("Manage the local cache");
 
-cache
-  .command("stats")
-  .description("Show cache statistics")
-  .action(cacheStatsCommand);
+cache.command("stats").description("Show cache statistics").action(cacheStatsCommand);
 
-cache
-  .command("clear")
-  .description("Clear all cached data")
-  .action(cacheClearCommand);
+cache.command("clear").description("Clear all cached data").action(cacheClearCommand);
 
 program.parse();

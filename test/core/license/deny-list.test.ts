@@ -2,10 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { checkDenyList } from "../../../src/core/license/deny-list.js";
 import type { ReportEntry } from "../../../src/core/report/types.js";
 
-function makeEntry(
-  id: string,
-  license: string | null,
-): ReportEntry {
+function makeEntry(id: string, license: string | null): ReportEntry {
   return {
     name: id.split("@")[0],
     version: id.split("@")[1] ?? "1.0.0",
@@ -24,10 +21,7 @@ describe("checkDenyList", () => {
   });
 
   test("detects simple denied license", () => {
-    const entries = [
-      makeEntry("pkg-a@1.0.0", "MIT"),
-      makeEntry("pkg-b@1.0.0", "GPL-3.0"),
-    ];
+    const entries = [makeEntry("pkg-a@1.0.0", "MIT"), makeEntry("pkg-b@1.0.0", "GPL-3.0")];
     const violations = checkDenyList(entries, ["GPL-3.0"]);
     expect(violations).toHaveLength(1);
     expect(violations[0].packageId).toBe("pkg-b@1.0.0");

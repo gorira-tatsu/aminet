@@ -1,9 +1,9 @@
 import { Database } from "bun:sqlite";
-import { join } from "path";
-import { homedir } from "os";
-import { mkdirSync, existsSync } from "fs";
-import { runMigrations } from "./migrations.js";
+import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { logger } from "../../utils/logger.js";
+import { runMigrations } from "./migrations.js";
 
 const DB_DIR = join(homedir(), ".ami");
 const DB_PATH = join(DB_DIR, "ami.db");

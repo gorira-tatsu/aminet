@@ -102,7 +102,10 @@ describe("renderGraphviz", () => {
       licenseCategory: "permissive",
       depth: 0,
       parents: new Set(),
-      dependencies: new Map([["a", "1.0.0"], ["b", "1.0.0"]]),
+      dependencies: new Map([
+        ["a", "1.0.0"],
+        ["b", "1.0.0"],
+      ]),
     });
     nodes.set("a@1.0.0", {
       id: "a@1.0.0",

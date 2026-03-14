@@ -64,10 +64,7 @@ describe("extractLicense", () => {
     const info: NpmVersionInfo = {
       name: "test",
       version: "1.0.0",
-      license: [
-        { type: "MIT" },
-        { type: "Apache-2.0" },
-      ] as any,
+      license: [{ type: "MIT" }, { type: "Apache-2.0" }] as any,
     };
     const result = extractLicense(info);
     expect(result.spdxId).toBe("MIT OR Apache-2.0");

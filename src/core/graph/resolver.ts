@@ -1,11 +1,10 @@
-import { getPackument } from "../registry/npm-client.js";
-import { resolveVersion } from "./semver-resolver.js";
-import { extractLicense } from "../license/checker.js";
-import { getCachedPackage, cachePackage } from "../store/package-store.js";
 import { Semaphore } from "../../utils/concurrency.js";
 import { logger } from "../../utils/logger.js";
-import type { DependencyGraph, PackageNode, DependencyEdge } from "./types.js";
-import type { NpmVersionInfo } from "../registry/types.js";
+import { extractLicense } from "../license/checker.js";
+import { getPackument } from "../registry/npm-client.js";
+import { cachePackage, getCachedPackage } from "../store/package-store.js";
+import { resolveVersion } from "./semver-resolver.js";
+import type { DependencyEdge, DependencyGraph, PackageNode } from "./types.js";
 
 export interface ResolverOptions {
   maxDepth?: number;
@@ -36,9 +35,7 @@ export async function resolveDependencyGraph(
   const rootPackument = await getPackument(rootName);
   const rootVersion = resolveVersion(rootPackument, rootVersionRange);
   if (!rootVersion) {
-    throw new Error(
-      `Could not resolve version for ${rootName}@${rootVersionRange}`,
-    );
+    throw new Error(`Could not resolve version for ${rootName}@${rootVersionRange}`);
   }
 
   const rootVersionInfo = rootPackument.versions[rootVersion];
@@ -56,9 +53,7 @@ export async function resolveDependencyGraph(
     }
   }
   if (includeDev && rootVersionInfo.devDependencies) {
-    for (const [name, range] of Object.entries(
-      rootVersionInfo.devDependencies,
-    )) {
+    for (const [name, range] of Object.entries(rootVersionInfo.devDependencies)) {
       rootDeps.set(name, range);
     }
   }
@@ -82,6 +77,8 @@ export async function resolveDependencyGraph(
     license: rootLicense.spdxId,
     licenseCategory: rootLicense.category,
     dependencies: Object.fromEntries(rootDeps),
+    tarballUrl: rootVersionInfo.dist?.tarball,
+    integrity: rootVersionInfo.dist?.integrity,
   });
 
   // BFS queue
@@ -105,17 +102,9 @@ export async function resolveDependencyGraph(
       batch.map((item) =>
         semaphore.run(async () => {
           try {
-            return await processQueueItem(
-              item,
-              nodes,
-              edges,
-              maxDepth,
-              includeDev,
-            );
+            return await processQueueItem(item, nodes, edges, maxDepth, includeDev);
           } catch (error) {
-            logger.warn(
-              `Failed to resolve ${item.name}@${item.versionRange}: ${error}`,
-            );
+            logger.warn(`Failed to resolve ${item.name}@${item.versionRange}: ${error}`);
             return [];
           }
         }),
@@ -138,7 +127,7 @@ async function processQueueItem(
   nodes: Map<string, PackageNode>,
   edges: DependencyEdge[],
   maxDepth: number,
-  includeDev: boolean,
+  _includeDev: boolean,
 ): Promise<QueueItem[]> {
   const { name, versionRange, depth, parentId } = item;
 
@@ -156,7 +145,7 @@ async function processQueueItem(
   let cachedPkg = null;
 
   // We still need to resolve the version from packument to know the exact version
-  let packument;
+  let packument: Awaited<ReturnType<typeof getPackument>>;
   try {
     packument = await getPackument(name);
   } catch {
@@ -246,6 +235,8 @@ async function processQueueItem(
     license: license.spdxId,
     licenseCategory: license.category,
     dependencies: Object.fromEntries(deps),
+    tarballUrl: versionInfo.dist?.tarball,
+    integrity: versionInfo.dist?.integrity,
   });
 
   if (depth >= maxDepth) {

@@ -1,17 +1,17 @@
-export { getDatabase, closeDatabase, setDatabase } from "./database.js";
-export { packageHash, packumentHash } from "./hash.js";
 export { TTL } from "./config.js";
-export { getCachedPackument, cachePackument } from "./packument-store.js";
+export { closeDatabase, getDatabase, setDatabase } from "./database.js";
+export { packageHash, packumentHash } from "./hash.js";
 export {
-  getCachedPackage,
+  type CachedPackage,
   cachePackage,
   cachePackageBatch,
-  type CachedPackage,
+  getCachedPackage,
 } from "./package-store.js";
+export { cachePackument, getCachedPackument } from "./packument-store.js";
 export {
-  getCachedVulnerabilities,
   cacheVulnerabilities,
   cacheVulnerabilityBatch,
+  getCachedVulnerabilities,
 } from "./vulnerability-store.js";
 
 import { getDatabase } from "./database.js";
@@ -26,9 +26,14 @@ export interface StoreStats {
 export function getStoreStats(): StoreStats {
   const db = getDatabase();
 
-  const packuments = (db.query("SELECT COUNT(*) as count FROM packuments").get() as { count: number }).count;
-  const packages = (db.query("SELECT COUNT(*) as count FROM packages").get() as { count: number }).count;
-  const vulnerabilities = (db.query("SELECT COUNT(*) as count FROM vulnerabilities").get() as { count: number }).count;
+  const packuments = (
+    db.query("SELECT COUNT(*) as count FROM packuments").get() as { count: number }
+  ).count;
+  const packages = (db.query("SELECT COUNT(*) as count FROM packages").get() as { count: number })
+    .count;
+  const vulnerabilities = (
+    db.query("SELECT COUNT(*) as count FROM vulnerabilities").get() as { count: number }
+  ).count;
 
   // Get DB file size
   let dbSizeBytes = 0;

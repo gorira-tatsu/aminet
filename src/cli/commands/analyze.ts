@@ -1,32 +1,35 @@
-import ora from "ora";
+import { readFile } from "node:fs/promises";
 import chalk from "chalk";
-import { resolveDependencyGraph } from "../../core/graph/resolver.js";
-import { scanVulnerabilities } from "../../core/vulnerability/scanner.js";
-import { buildReport } from "../../core/report/builder.js";
-import { renderTable } from "../output/table.js";
-import { renderJson } from "../output/json.js";
-import { renderTree } from "../output/tree.js";
-import { renderGraphviz } from "../output/graphviz.js";
-import { renderMermaid } from "../output/mermaid.js";
-import { renderNotices, renderNoticesJson } from "../output/notices.js";
-import { setLogLevel } from "../../utils/logger.js";
-import { logger } from "../../utils/logger.js";
-import { setNpmCacheEnabled } from "../../core/registry/npm-client.js";
-import { getDatabase } from "../../core/store/database.js";
+import ora from "ora";
+import { buildReportFromPackageJson } from "../../core/analyzer.js";
 import { loadConfig } from "../../core/config/loader.js";
+import type { AmiConfig } from "../../core/config/types.js";
+import { resolveDependencyGraph } from "../../core/graph/resolver.js";
+import type { DependencyGraph } from "../../core/graph/types.js";
+import { checkTreeCompatibility } from "../../core/license/compatibility.js";
+import { traceContaminationPaths } from "../../core/license/contamination.js";
 import { checkDenyList } from "../../core/license/deny-list.js";
 import { extractLicenseFiles } from "../../core/license/tarball-checker.js";
-import type { AnalyzeOptions } from "../options.js";
-import type { AmiConfig } from "../../core/config/types.js";
-import type { DependencyGraph } from "../../core/graph/types.js";
-import type { VulnerabilityResult } from "../../core/vulnerability/types.js";
+import { setNpmCacheEnabled } from "../../core/registry/npm-client.js";
+import type { BuildReportOptions } from "../../core/report/builder.js";
+import { buildReport } from "../../core/report/builder.js";
 import type { Report } from "../../core/report/types.js";
-import { readFile } from "fs/promises";
+import { scanSecuritySignals } from "../../core/security/scanner.js";
+import { getDatabase } from "../../core/store/database.js";
+import { scanVulnerabilities } from "../../core/vulnerability/scanner.js";
+import type { VulnerabilityResult } from "../../core/vulnerability/types.js";
+import { logger, setLogLevel } from "../../utils/logger.js";
+import type { AnalyzeOptions } from "../options.js";
+import { renderCycloneDx } from "../output/cyclonedx.js";
+import { renderGraphviz } from "../output/graphviz.js";
+import { renderJson } from "../output/json.js";
+import { renderMermaid } from "../output/mermaid.js";
+import { renderNotices, renderNoticesJson } from "../output/notices.js";
+import { renderSpdx } from "../output/spdx.js";
+import { renderTable } from "../output/table.js";
+import { renderTree } from "../output/tree.js";
 
-export async function analyzeCommand(
-  target: string,
-  options: AnalyzeOptions,
-): Promise<void> {
+export async function analyzeCommand(target: string, options: AnalyzeOptions): Promise<void> {
   if (options.verbose) {
     setLogLevel("debug");
   }
@@ -44,6 +47,10 @@ export async function analyzeCommand(
     if (!options.dot && !options.mermaid && !options.tree && !options.notices) {
       options.json = true;
     }
+    // Security on by default in CI
+    if (options.security === undefined) {
+      options.security = true;
+    }
   }
 
   // Initialize DB (ensures ~/.ami/ exists)
@@ -54,7 +61,8 @@ export async function analyzeCommand(
   }
 
   const isCi = options.ci || false;
-  const useSpinner = !isCi && !options.dot && !options.mermaid;
+  const useSpinner =
+    !isCi && !options.dot && !options.mermaid && !options.cyclonedx && !options.spdx;
 
   if (options.file) {
     await analyzeFile(target, options, config, useSpinner);
@@ -85,6 +93,9 @@ function mergeConfig(options: AnalyzeOptions, config: AmiConfig): void {
   if (options.deepLicenseCheck === undefined && config.deepLicenseCheck) {
     options.deepLicenseCheck = config.deepLicenseCheck;
   }
+  if (options.security === undefined && config.security) {
+    options.security = config.security;
+  }
 }
 
 async function analyzeFile(
@@ -98,12 +109,12 @@ async function analyzeFile(
 
   const allDeps: Record<string, string> = {
     ...(pkg.dependencies ?? {}),
-    ...(options.dev ? pkg.devDependencies ?? {} : {}),
+    ...(options.dev ? (pkg.devDependencies ?? {}) : {}),
   };
 
   const depEntries = Object.entries(allDeps);
   if (depEntries.length === 0) {
-    console.error(chalk.yellow("No dependencies found in " + filePath));
+    console.error(chalk.yellow(`No dependencies found in ${filePath}`));
     return;
   }
 
@@ -115,94 +126,27 @@ async function analyzeFile(
     logger.info(`Analyzing ${depEntries.length} dependencies from ${filePath}`);
   }
 
-  // Resolve each dependency individually
-  const allNodes = new Map<string, import("../../core/graph/types.js").PackageNode>();
-  const allEdges: import("../../core/graph/types.js").DependencyEdge[] = [];
-  let rootId = pkg.name ? `${pkg.name}@${pkg.version ?? "0.0.0"}` : "root@0.0.0";
-  let resolvedCount = 0;
-  let skippedCount = 0;
-
-  // Create a virtual root node
-  const rootDeps = new Map(depEntries.map(([n, v]) => [n, v as string]));
-  allNodes.set(rootId, {
-    id: rootId,
-    name: pkg.name ?? "root",
-    version: pkg.version ?? "0.0.0",
-    license: null,
-    licenseCategory: "unknown",
-    depth: 0,
-    parents: new Set(),
-    dependencies: rootDeps,
+  // Use buildReportFromPackageJson for file analysis
+  const result = await buildReportFromPackageJson(pkg, {
+    depth: options.depth,
+    concurrency: options.concurrency,
+    dev: options.dev,
+    noCache: options.noCache,
   });
 
-  for (const [depName, depRange] of depEntries) {
-    try {
-      const graph = await resolveDependencyGraph(
-        depName,
-        depRange as string,
-        {
-          maxDepth: options.depth,
-          concurrency: options.concurrency ?? 5,
-        },
-      );
-
-      // Merge into combined graph
-      for (const [id, node] of graph.nodes) {
-        if (!allNodes.has(id)) {
-          // Adjust depth (+1 because relative to our virtual root)
-          node.depth += 1;
-          allNodes.set(id, node);
-        }
-      }
-      for (const edge of graph.edges) {
-        allEdges.push(edge);
-      }
-      // Add edge from virtual root to this dependency's root
-      allEdges.push({ from: rootId, to: graph.root, versionRange: depRange as string });
-
-      resolvedCount++;
-      if (spinner) {
-        spinner.text = `Resolving dependencies... (${resolvedCount}/${depEntries.length} direct deps, ${skippedCount} skipped)`;
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("not found")) {
-        logger.warn(`Skipping private/unavailable package: ${depName}`);
-        skippedCount++;
-      } else {
-        logger.warn(`Failed to resolve ${depName}: ${msg}`);
-        skippedCount++;
-      }
-      if (spinner) {
-        spinner.text = `Resolving dependencies... (${resolvedCount}/${depEntries.length} direct deps, ${skippedCount} skipped)`;
-      }
-    }
-  }
-
-  const combinedGraph: DependencyGraph = {
-    root: rootId,
-    nodes: allNodes,
-    edges: allEdges,
-  };
-
   if (spinner) {
-    spinner.succeed(
-      `Resolved ${allNodes.size} packages from ${resolvedCount} deps (${skippedCount} skipped)`,
-    );
+    spinner.succeed(`Resolved ${result.graph.nodes.size} packages`);
   }
 
   // Apply license overrides
-  applyLicenseOverrides(combinedGraph, config);
-
-  // Vulnerability scan and output
-  const vulnerabilities = await scanPhase(combinedGraph, options, useSpinner);
+  applyLicenseOverrides(result.graph, config);
 
   // Deep license check
   if (options.deepLicenseCheck) {
-    await deepLicenseCheckPhase(combinedGraph, useSpinner);
+    await deepLicenseCheckPhase(result.graph, useSpinner);
   }
 
-  outputAndExit(combinedGraph, vulnerabilities, options, config);
+  outputAndExit(result.graph, result.vulnerabilities, options, config);
 }
 
 async function analyzePackage(
@@ -238,17 +182,13 @@ async function analyzePackage(
       },
     );
     if (spinner) {
-      spinner.succeed(
-        `Resolved ${graph.nodes.size} packages (${graph.edges.length} edges)`,
-      );
+      spinner.succeed(`Resolved ${graph.nodes.size} packages (${graph.edges.length} edges)`);
     }
   } catch (error) {
     if (spinner) {
       spinner.fail("Failed to resolve dependencies");
     }
-    console.error(
-      chalk.red(error instanceof Error ? error.message : String(error)),
-    );
+    console.error(chalk.red(error instanceof Error ? error.message : String(error)));
     process.exit(1);
   }
 
@@ -279,13 +219,8 @@ function applyLicenseOverrides(graph: DependencyGraph, config: AmiConfig): void 
   }
 }
 
-async function deepLicenseCheckPhase(
-  graph: DependencyGraph,
-  useSpinner: boolean,
-): Promise<void> {
-  const spinner = useSpinner
-    ? ora("Checking LICENSE files from tarballs...").start()
-    : null;
+async function deepLicenseCheckPhase(graph: DependencyGraph, useSpinner: boolean): Promise<void> {
+  const spinner = useSpinner ? ora("Checking LICENSE files from tarballs...").start() : null;
 
   if (!useSpinner) {
     logger.info("Checking LICENSE files from tarballs...");
@@ -295,12 +230,10 @@ async function deepLicenseCheckPhase(
   let mismatches = 0;
   const warnings: string[] = [];
 
-  // We need access to the packument data for tarball URLs
-  // Import the npm client to get packument data
   const { getPackument } = require("../../core/registry/npm-client.js");
 
   for (const node of graph.nodes.values()) {
-    if (node.depth === 0) continue; // skip root
+    if (node.depth === 0) continue;
 
     try {
       const packument = await getPackument(node.name);
@@ -312,7 +245,6 @@ async function deepLicenseCheckPhase(
 
       if (result.detectedLicense && node.license) {
         if (result.detectedLicense !== node.license) {
-          // Check if it's a genuine mismatch (not just a variant)
           const declared = node.license;
           const detected = result.detectedLicense;
           if (!isLicenseVariant(declared, detected)) {
@@ -345,9 +277,7 @@ async function deepLicenseCheckPhase(
 }
 
 function isLicenseVariant(declared: string, detected: string): boolean {
-  // Treat GPL-3.0 and GPL-3.0-only as the same
-  const normalize = (s: string) =>
-    s.replace(/-only$/, "").replace(/-or-later$/, "");
+  const normalize = (s: string) => s.replace(/-only$/, "").replace(/-or-later$/, "");
   return normalize(declared) === normalize(detected);
 }
 
@@ -356,9 +286,7 @@ async function scanPhase(
   options: AnalyzeOptions,
   useSpinner: boolean,
 ): Promise<VulnerabilityResult[]> {
-  const spinner = useSpinner
-    ? ora("Scanning for vulnerabilities...").start()
-    : null;
+  const spinner = useSpinner ? ora("Scanning for vulnerabilities...").start() : null;
 
   if (!useSpinner) {
     logger.info("Scanning for vulnerabilities...");
@@ -366,21 +294,12 @@ async function scanPhase(
 
   let vulnerabilities: VulnerabilityResult[];
   try {
-    vulnerabilities = await scanVulnerabilities(
-      graph,
-      options.concurrency ?? 5,
-      !options.noCache,
-    );
-    const totalVulns = vulnerabilities.reduce(
-      (sum, v) => sum + v.vulnerabilities.length,
-      0,
-    );
+    vulnerabilities = await scanVulnerabilities(graph, options.concurrency ?? 5, !options.noCache);
+    const totalVulns = vulnerabilities.reduce((sum, v) => sum + v.vulnerabilities.length, 0);
     if (totalVulns > 0) {
       if (spinner) {
         spinner.warn(
-          chalk.yellow(
-            `Found ${totalVulns} vulnerabilities in ${vulnerabilities.length} packages`,
-          ),
+          chalk.yellow(`Found ${totalVulns} vulnerabilities in ${vulnerabilities.length} packages`),
         );
       }
     } else {
@@ -388,7 +307,7 @@ async function scanPhase(
         spinner.succeed("No vulnerabilities found");
       }
     }
-  } catch (error) {
+  } catch (_error) {
     if (spinner) {
       spinner.warn("Vulnerability scan failed, continuing without results");
     }
@@ -398,16 +317,66 @@ async function scanPhase(
   return vulnerabilities;
 }
 
-function outputAndExit(
+async function outputAndExit(
   graph: DependencyGraph,
   vulnerabilities: VulnerabilityResult[],
   options: AnalyzeOptions,
   config: AmiConfig,
-): void {
-  const report = buildReport(graph, vulnerabilities);
+): Promise<void> {
+  // Build report options with optional security/license data
+  const reportOptions: BuildReportOptions = {};
+
+  // Phase 3: Security scan
+  if (options.security) {
+    const useSpinner =
+      !options.ci && !options.dot && !options.mermaid && !options.cyclonedx && !options.spdx;
+    const spinner = useSpinner ? ora("Running security analysis...").start() : null;
+
+    try {
+      const securityResult = await scanSecuritySignals(graph);
+      reportOptions.securitySignals = securityResult.signals;
+      reportOptions.securitySummary = securityResult.summary;
+
+      const totalSignals = securityResult.signals.length;
+      if (spinner) {
+        if (totalSignals > 0) {
+          spinner.warn(
+            chalk.yellow(
+              `Found ${totalSignals} security signals (${securityResult.summary.highCount} high, ${securityResult.summary.mediumCount} medium)`,
+            ),
+          );
+        } else {
+          spinner.succeed("No security signals found");
+        }
+      }
+    } catch (_error) {
+      if (spinner) {
+        spinner.warn("Security scan failed, continuing without results");
+      }
+    }
+  }
+
+  // Phase 4: License report
+  if (options.licenseReport) {
+    const contamination = traceContaminationPaths(graph);
+    if (contamination.paths.length > 0) {
+      reportOptions.contaminationPaths = contamination.paths;
+    }
+
+    const incompatible = checkTreeCompatibility(graph);
+    if (incompatible.length > 0) {
+      reportOptions.licenseIncompatibilities = incompatible;
+    }
+  }
+
+  const report = buildReport(graph, vulnerabilities, reportOptions);
 
   // Output
-  if (options.notices) {
+  if (options.cyclonedx) {
+    renderCycloneDx(report, graph);
+  } else if (options.spdx) {
+    renderSpdx(report, graph);
+  } else if (options.notices) {
     if (options.json) {
       renderNoticesJson(report);
     } else {
@@ -446,18 +415,12 @@ function outputAndExit(
             ),
           );
         } else {
-          console.error(
-            chalk.red(
-              `  ✗ ${v.packageId}: "${v.license}" is denied`,
-            ),
-          );
+          console.error(chalk.red(`  ✗ ${v.packageId}: "${v.license}" is denied`));
         }
       }
 
-      // Only exit 4 if there are hard violations (all alternatives denied or non-OR)
       const hardViolations = violations.filter((v) => {
         if (!v.isOrExpression) return true;
-        // OR expression: check if ALL alternatives are denied
         const parts = v.license.split(" OR ").map((p) => p.trim());
         return parts.every((p) => denied.includes(p));
       });
@@ -472,7 +435,6 @@ function outputAndExit(
     const allowSet = new Set(config.allowLicenses);
     const unlisted = report.entries.filter((e) => {
       if (!e.license) return true;
-      // For compound expressions, check each component
       const parts = e.license.split(/ (?:OR|AND) /).map((p) => p.trim());
       return !parts.some((p) => allowSet.has(p));
     });
@@ -481,9 +443,7 @@ function outputAndExit(
       console.error("");
       console.error(chalk.yellow.bold("Licenses not in allow-list:"));
       for (const e of unlisted) {
-        console.error(
-          chalk.yellow(`  ⚠ ${e.id}: ${e.license ?? "UNKNOWN"}`),
-        );
+        console.error(chalk.yellow(`  ⚠ ${e.id}: ${e.license ?? "UNKNOWN"}`));
       }
     }
   }
@@ -507,7 +467,6 @@ function outputAndExit(
 function computeExitCode(report: Report, options: AnalyzeOptions): number {
   let code = 0;
 
-  // Check vulnerabilities
   if (options.failOnVuln) {
     const threshold = options.failOnVuln.toLowerCase();
     const { summary } = report;
@@ -521,10 +480,7 @@ function computeExitCode(report: Report, options: AnalyzeOptions): number {
         vulnFound = summary.criticalCount > 0 || summary.highCount > 0;
         break;
       case "medium":
-        vulnFound =
-          summary.criticalCount > 0 ||
-          summary.highCount > 0 ||
-          summary.mediumCount > 0;
+        vulnFound = summary.criticalCount > 0 || summary.highCount > 0 || summary.mediumCount > 0;
         break;
       case "low":
         vulnFound = summary.vulnerabilityCount > 0;
@@ -534,7 +490,6 @@ function computeExitCode(report: Report, options: AnalyzeOptions): number {
     if (vulnFound) code |= 1;
   }
 
-  // Check licenses
   if (options.failOnLicense) {
     const threshold = options.failOnLicense.toLowerCase();
     const { licenseCounts } = report.summary;
@@ -543,8 +498,7 @@ function computeExitCode(report: Report, options: AnalyzeOptions): number {
     if (threshold === "copyleft") {
       licenseViolation = licenseCounts.copyleft > 0;
     } else if (threshold === "weak-copyleft") {
-      licenseViolation =
-        licenseCounts.copyleft > 0 || licenseCounts["weak-copyleft"] > 0;
+      licenseViolation = licenseCounts.copyleft > 0 || licenseCounts["weak-copyleft"] > 0;
     }
 
     if (licenseViolation) code |= 2;
@@ -572,7 +526,7 @@ function writeGitHubSummary(report: Report): void {
       `| Weak-copyleft licenses | ${summary.licenseCounts["weak-copyleft"]} |`,
       "",
     ];
-    const { appendFileSync } = require("fs");
+    const { appendFileSync } = require("node:fs");
     appendFileSync(summaryPath, lines.join("\n"));
   } catch {
     // Non-critical
@@ -583,7 +537,6 @@ function parsePackageSpec(spec: string): {
   name: string;
   versionRange: string;
 } {
-  // Handle scoped packages: @scope/name@version
   if (spec.startsWith("@")) {
     const slashIndex = spec.indexOf("/");
     if (slashIndex === -1) {
@@ -600,7 +553,6 @@ function parsePackageSpec(spec: string): {
     return { name: spec, versionRange: "latest" };
   }
 
-  // Regular packages: name@version
   const atIndex = spec.lastIndexOf("@");
   if (atIndex > 0) {
     return {

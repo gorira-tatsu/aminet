@@ -7,10 +7,7 @@ export interface DenyListViolation {
   isOrExpression: boolean; // OR expression: warning (can choose non-denied side)
 }
 
-export function checkDenyList(
-  entries: ReportEntry[],
-  denied: string[],
-): DenyListViolation[] {
+export function checkDenyList(entries: ReportEntry[], denied: string[]): DenyListViolation[] {
   if (denied.length === 0) return [];
 
   const deniedSet = new Set(denied.map((d) => d.trim()));

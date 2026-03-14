@@ -69,10 +69,7 @@ function formatLicenseLabel(license: string | null): string {
   return license;
 }
 
-function getNodeColor(
-  category: string,
-  vulnCount: number,
-): string {
+function getNodeColor(category: string, vulnCount: number): string {
   if (vulnCount > 0) return "#FF6B6B";
   if (category === "copyleft") return "#FF6B6B";
   if (category === "weak-copyleft" || category === "unknown") return "#FFD93D";

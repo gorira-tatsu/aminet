@@ -1,10 +1,7 @@
 import semver from "semver";
 import type { NpmPackument } from "../registry/types.js";
 
-export function resolveVersion(
-  packument: NpmPackument,
-  range: string,
-): string | null {
+export function resolveVersion(packument: NpmPackument, range: string): string | null {
   // Handle "latest" or dist-tag references
   if (packument["dist-tags"][range]) {
     return packument["dist-tags"][range];
@@ -16,11 +13,7 @@ export function resolveVersion(
   }
 
   // Handle URL/git dependencies - skip
-  if (
-    range.startsWith("http") ||
-    range.startsWith("git") ||
-    range.includes("/")
-  ) {
+  if (range.startsWith("http") || range.startsWith("git") || range.includes("/")) {
     return null;
   }
 

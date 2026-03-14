@@ -1,8 +1,4 @@
-export type LicenseCategory =
-  | "permissive"
-  | "copyleft"
-  | "weak-copyleft"
-  | "unknown";
+export type LicenseCategory = "permissive" | "copyleft" | "weak-copyleft" | "unknown";
 
 export interface PackageNode {
   id: string; // "express@4.21.2"

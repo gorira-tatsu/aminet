@@ -14,5 +14,5 @@ function envInt(key: string, defaultValue: number): number {
   const val = process.env[key];
   if (val === undefined) return defaultValue;
   const parsed = parseInt(val, 10);
-  return isNaN(parsed) ? defaultValue : parsed;
+  return Number.isNaN(parsed) ? defaultValue : parsed;
 }

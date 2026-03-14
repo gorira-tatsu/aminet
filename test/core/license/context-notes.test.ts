@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  getContextNote,
-  getContextNotes,
-} from "../../../src/core/license/context-notes.js";
+import { getContextNote, getContextNotes } from "../../../src/core/license/context-notes.js";
 
 describe("getContextNote", () => {
   test("returns note for GPL-3.0", () => {

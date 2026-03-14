@@ -33,19 +33,15 @@ export async function fetchWithRetry(
 
       if (response.status === 429) {
         const retryAfter = response.headers.get("Retry-After");
-        const delay = retryAfter
-          ? parseInt(retryAfter, 10) * 1000
-          : opts.baseDelay * Math.pow(2, attempt);
+        const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : opts.baseDelay * 2 ** attempt;
         logger.warn(`Rate limited, retrying after ${delay}ms...`);
         await sleep(delay);
         continue;
       }
 
       if (response.status >= 500 && attempt < opts.maxRetries) {
-        const delay = opts.baseDelay * Math.pow(2, attempt);
-        logger.warn(
-          `Server error ${response.status}, retrying after ${delay}ms...`,
-        );
+        const delay = opts.baseDelay * 2 ** attempt;
+        logger.warn(`Server error ${response.status}, retrying after ${delay}ms...`);
         await sleep(delay);
         continue;
       }
@@ -55,7 +51,7 @@ export async function fetchWithRetry(
       if (attempt === opts.maxRetries) {
         throw error;
       }
-      const delay = opts.baseDelay * Math.pow(2, attempt);
+      const delay = opts.baseDelay * 2 ** attempt;
       logger.warn(`Request failed, retrying after ${delay}ms...`, error);
       await sleep(delay);
     }

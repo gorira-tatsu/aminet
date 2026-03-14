@@ -1,11 +1,28 @@
 import type { DependencyGraph } from "../graph/types.js";
+import type { IncompatiblePair } from "../license/compatibility-types.js";
+import type { ContaminationPath } from "../license/contamination.js";
+import { getContextNotes } from "../license/context-notes.js";
+import type { SecuritySignal } from "../security/types.js";
 import type { VulnerabilityResult } from "../vulnerability/types.js";
 import type { Report, ReportEntry, ReportSummary } from "./types.js";
-import { getContextNotes } from "../license/context-notes.js";
+
+export interface BuildReportOptions {
+  securitySignals?: SecuritySignal[];
+  securitySummary?: {
+    criticalCount: number;
+    highCount: number;
+    mediumCount: number;
+    lowCount: number;
+    infoCount: number;
+  };
+  contaminationPaths?: ContaminationPath[];
+  licenseIncompatibilities?: IncompatiblePair[];
+}
 
 export function buildReport(
   graph: DependencyGraph,
   vulnerabilities: VulnerabilityResult[],
+  options?: BuildReportOptions,
 ): Report {
   const vulnMap = new Map<string, VulnerabilityResult>();
   for (const v of vulnerabilities) {
@@ -39,22 +56,37 @@ export function buildReport(
   const rootNode = graph.nodes.get(graph.root);
 
   // Build context notes for copyleft/weak-copyleft licenses
-  const allLicenses = entries
-    .map((e) => e.license)
-    .filter((l): l is string => l !== null);
+  const allLicenses = entries.map((e) => e.license).filter((l): l is string => l !== null);
   const contextNotes = getContextNotes(allLicenses);
 
-  return {
+  const report: Report = {
     root: graph.root,
     totalPackages: entries.length,
     directDependencies: rootNode?.dependencies.size ?? 0,
     maxDepth: Math.max(...entries.map((e) => e.depth)),
     entries,
     summary,
-    contextNotes: contextNotes.length > 0
-      ? contextNotes.map((cn) => ({ license: cn.license, note: cn.note }))
-      : undefined,
+    contextNotes:
+      contextNotes.length > 0
+        ? contextNotes.map((cn) => ({ license: cn.license, note: cn.note }))
+        : undefined,
   };
+
+  // Add optional security and license data
+  if (options?.securitySignals) {
+    report.securitySignals = options.securitySignals;
+  }
+  if (options?.securitySummary) {
+    report.securitySummary = options.securitySummary;
+  }
+  if (options?.contaminationPaths) {
+    report.contaminationPaths = options.contaminationPaths;
+  }
+  if (options?.licenseIncompatibilities) {
+    report.licenseIncompatibilities = options.licenseIncompatibilities;
+  }
+
+  return report;
 }
 
 function buildSummary(entries: ReportEntry[]): ReportSummary {
@@ -93,9 +125,7 @@ function buildSummary(entries: ReportEntry[]): ReportSummary {
   };
 }
 
-function extractSeverity(
-  vuln: VulnerabilityResult["vulnerabilities"][0],
-): string | null {
+function extractSeverity(vuln: VulnerabilityResult["vulnerabilities"][0]): string | null {
   // Try CVSS score from severity array
   if (vuln.severity && vuln.severity.length > 0) {
     for (const s of vuln.severity) {
@@ -117,7 +147,7 @@ function extractSeverity(
 
 function parseCvssScore(vector: string): number | null {
   const num = parseFloat(vector);
-  if (!isNaN(num)) return num;
+  if (!Number.isNaN(num)) return num;
   return null;
 }
 

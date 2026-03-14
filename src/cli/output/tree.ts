@@ -2,10 +2,7 @@ import chalk from "chalk";
 import type { DependencyGraph } from "../../core/graph/types.js";
 import type { VulnerabilityResult } from "../../core/vulnerability/types.js";
 
-export function renderTree(
-  graph: DependencyGraph,
-  vulnerabilities: VulnerabilityResult[],
-): void {
+export function renderTree(graph: DependencyGraph, vulnerabilities: VulnerabilityResult[]): void {
   const vulnMap = new Map<string, VulnerabilityResult>();
   for (const v of vulnerabilities) {
     vulnMap.set(v.packageId, v);
@@ -57,19 +54,15 @@ function printChildren(
   }
 }
 
-function findChildNode(
-  graph: DependencyGraph,
-  parentId: string,
-  depName: string,
-) {
+function findChildNode(graph: DependencyGraph, parentId: string, depName: string) {
   // Find the edge from parent to a child with this name
   for (const edge of graph.edges) {
-    if (edge.from === parentId && edge.to.startsWith(depName + "@")) {
+    if (edge.from === parentId && edge.to.startsWith(`${depName}@`)) {
       return graph.nodes.get(edge.to);
     }
   }
   // Fallback: look in nodes
-  for (const [id, node] of graph.nodes) {
+  for (const [_id, node] of graph.nodes) {
     if (node.name === depName && node.parents.has(parentId)) {
       return node;
     }

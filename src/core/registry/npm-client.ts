@@ -1,6 +1,6 @@
 import { fetchWithRetry } from "../../utils/http.js";
 import { logger } from "../../utils/logger.js";
-import { getCachedPackument, cachePackument } from "../store/packument-store.js";
+import { cachePackument, getCachedPackument } from "../store/packument-store.js";
 import type { NpmPackument } from "./types.js";
 
 const NPM_REGISTRY = "https://registry.npmjs.org";
@@ -44,9 +44,7 @@ export async function getPackument(name: string): Promise<NpmPackument> {
   }
 
   if (!response.ok) {
-    throw new Error(
-      `Failed to fetch ${name}: ${response.status} ${response.statusText}`,
-    );
+    throw new Error(`Failed to fetch ${name}: ${response.status} ${response.statusText}`);
   }
 
   const packument = (await response.json()) as NpmPackument;

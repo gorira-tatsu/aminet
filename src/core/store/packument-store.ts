@@ -1,7 +1,7 @@
+import { logger } from "../../utils/logger.js";
+import { TTL } from "./config.js";
 import { getDatabase } from "./database.js";
 import { packumentHash } from "./hash.js";
-import { TTL } from "./config.js";
-import { logger } from "../../utils/logger.js";
 
 interface PackumentRow {
   ecosystem: string;
@@ -11,10 +11,7 @@ interface PackumentRow {
   fetched_at: number;
 }
 
-export function getCachedPackument(
-  name: string,
-  ecosystem = "npm",
-): unknown | null {
+export function getCachedPackument(name: string, ecosystem = "npm"): unknown | null {
   const db = getDatabase();
   const row = db
     .query<PackumentRow, [string, string]>(
@@ -34,11 +31,7 @@ export function getCachedPackument(
   return JSON.parse(row.data);
 }
 
-export function cachePackument(
-  name: string,
-  data: unknown,
-  ecosystem = "npm",
-): void {
+export function cachePackument(name: string, data: unknown, ecosystem = "npm"): void {
   const db = getDatabase();
   const hash = packumentHash(ecosystem, name);
 

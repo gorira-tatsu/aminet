@@ -1,6 +1,6 @@
 import type { NpmVersionInfo } from "../registry/types.js";
-import type { LicenseInfo } from "./types.js";
 import { classifyLicense } from "./spdx.js";
+import type { LicenseInfo } from "./types.js";
 
 export function extractLicense(versionInfo: NpmVersionInfo): LicenseInfo {
   const raw = versionInfo.license;
@@ -23,9 +23,7 @@ export function extractLicense(versionInfo: NpmVersionInfo): LicenseInfo {
 
   // Legacy array format: [{ type: "MIT" }, { type: "Apache-2.0" }]
   if (Array.isArray(raw)) {
-    const types = raw
-      .filter((l) => l.type)
-      .map((l) => normalizeSpdxId(l.type));
+    const types = raw.filter((l) => l.type).map((l) => normalizeSpdxId(l.type));
     if (types.length === 0) {
       return { spdxId: null, category: "unknown", raw: JSON.stringify(raw) };
     }
