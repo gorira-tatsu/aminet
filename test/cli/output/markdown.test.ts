@@ -10,12 +10,16 @@ function makeEmptyDiff(): DependencyDiff {
     licenseChanged: [],
     newVulnerabilities: [],
     resolvedVulnerabilities: [],
+    newSecuritySignals: [],
+    resolvedSecuritySignals: [],
     summary: {
       addedCount: 0,
       removedCount: 0,
       updatedCount: 0,
       newVulnCount: 0,
       resolvedVulnCount: 0,
+      newSecuritySignalCount: 0,
+      resolvedSecuritySignalCount: 0,
       licenseChangeCount: 0,
       riskLevel: "none",
     },
@@ -102,5 +106,33 @@ describe("renderMarkdownComment", () => {
     const md = renderMarkdownComment(diff);
     expect(md).toContain(":red_circle:");
     expect(md).toContain("Critical");
+  });
+
+  it("renders security signal changes", () => {
+    const diff = makeEmptyDiff();
+    diff.newSecuritySignals = [
+      {
+        packageId: "pkg@1.0.0",
+        name: "pkg",
+        version: "1.0.0",
+        signals: [
+          {
+            category: "install-script",
+            severity: "high",
+            packageId: "pkg@1.0.0",
+            name: "pkg",
+            version: "1.0.0",
+            title: "Install script present",
+            description: "postinstall script detected",
+          },
+        ],
+      },
+    ];
+    diff.summary.newSecuritySignalCount = 1;
+
+    const md = renderMarkdownComment(diff);
+    expect(md).toContain("### New Security Signals");
+    expect(md).toContain("Install script present");
+    expect(md).toContain("HIGH");
   });
 });

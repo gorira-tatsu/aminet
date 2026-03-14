@@ -43,6 +43,13 @@ describe("checkDenyList", () => {
     expect(violations[0].isOrExpression).toBe(false);
   });
 
+  test("handles nested OR alternatives", () => {
+    const entries = [makeEntry("pkg@1.0.0", "MIT OR (GPL-3.0 AND LGPL-2.1)")];
+    const violations = checkDenyList(entries, ["GPL-3.0"]);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].isOrExpression).toBe(true);
+  });
+
   test("no match returns empty", () => {
     const entries = [makeEntry("pkg@1.0.0", "MIT")];
     expect(checkDenyList(entries, ["GPL-3.0"])).toEqual([]);

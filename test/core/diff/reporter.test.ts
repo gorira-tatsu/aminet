@@ -222,4 +222,27 @@ describe("computeDiff", () => {
     const diff = computeDiff(report, report);
     expect(diff.summary.riskLevel).toBe("none");
   });
+
+  it("detects new security signals", () => {
+    const base = makeReport({ entries: [] });
+    const head = makeReport({
+      entries: [],
+      securitySignals: [
+        {
+          category: "install-script",
+          severity: "high",
+          packageId: "pkg@1.0.0",
+          name: "pkg",
+          version: "1.0.0",
+          title: "Install script present",
+          description: "postinstall detected",
+        },
+      ],
+    });
+
+    const diff = computeDiff(base, head);
+    expect(diff.newSecuritySignals).toHaveLength(1);
+    expect(diff.summary.newSecuritySignalCount).toBe(1);
+    expect(diff.summary.riskLevel).toBe("high");
+  });
 });

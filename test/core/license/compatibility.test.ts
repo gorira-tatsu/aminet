@@ -150,4 +150,49 @@ describe("checkTreeCompatibility", () => {
     const pairs = checkTreeCompatibility(graph);
     expect(pairs).toHaveLength(0);
   });
+
+  it("does not flag incompatible pair when a dual-license alternative is compatible", () => {
+    const nodes = new Map<string, PackageNode>();
+    nodes.set("root@1.0.0", {
+      id: "root@1.0.0",
+      name: "root",
+      version: "1.0.0",
+      license: null,
+      licenseCategory: "unknown",
+      depth: 0,
+      parents: new Set(),
+      dependencies: new Map(),
+    });
+    nodes.set("dual@1.0.0", {
+      id: "dual@1.0.0",
+      name: "dual",
+      version: "1.0.0",
+      license: "MIT OR Apache-2.0",
+      licenseCategory: "permissive",
+      depth: 1,
+      parents: new Set(["root@1.0.0"]),
+      dependencies: new Map(),
+    });
+    nodes.set("gpl@1.0.0", {
+      id: "gpl@1.0.0",
+      name: "gpl",
+      version: "1.0.0",
+      license: "GPL-2.0",
+      licenseCategory: "copyleft",
+      depth: 1,
+      parents: new Set(["root@1.0.0"]),
+      dependencies: new Map(),
+    });
+
+    const graph: DependencyGraph = {
+      root: "root@1.0.0",
+      nodes,
+      edges: [
+        { from: "root@1.0.0", to: "dual@1.0.0", versionRange: "*" },
+        { from: "root@1.0.0", to: "gpl@1.0.0", versionRange: "*" },
+      ],
+    };
+
+    expect(checkTreeCompatibility(graph)).toHaveLength(0);
+  });
 });

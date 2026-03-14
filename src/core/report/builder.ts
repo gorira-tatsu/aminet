@@ -1,8 +1,15 @@
+import type { FreshnessReport } from "../freshness/analyzer.js";
 import type { DependencyGraph } from "../graph/types.js";
 import type { IncompatiblePair } from "../license/compatibility-types.js";
 import type { ContaminationPath } from "../license/contamination.js";
 import { getContextNotes } from "../license/context-notes.js";
+import type { EnhancedLicense } from "../license/enhanced-checker.js";
+import type { PhantomDependency } from "../phantom/scanner.js";
+import type { PinningReport } from "../pinning/analyzer.js";
+import type { ProvenanceResult } from "../provenance/checker.js";
 import type { SecuritySignal } from "../security/types.js";
+import type { TrustScore } from "../trust/types.js";
+import type { NormalizedAdvisory } from "../vulnerability/advisory-types.js";
 import type { VulnerabilityResult } from "../vulnerability/types.js";
 import type { Report, ReportEntry, ReportSummary } from "./types.js";
 
@@ -17,6 +24,14 @@ export interface BuildReportOptions {
   };
   contaminationPaths?: ContaminationPath[];
   licenseIncompatibilities?: IncompatiblePair[];
+  advisories?: Map<string, NormalizedAdvisory[]>;
+  trustScores?: Map<string, TrustScore>;
+  freshnessReports?: Map<string, FreshnessReport>;
+  enhancedLicenses?: Map<string, EnhancedLicense>;
+  phantomDeps?: PhantomDependency[];
+  provenanceResults?: ProvenanceResult[];
+  pinningReport?: PinningReport;
+  deepLicenseMismatches?: Report["deepLicenseMismatches"];
 }
 
 export function buildReport(
@@ -33,7 +48,7 @@ export function buildReport(
 
   for (const node of graph.nodes.values()) {
     const vulnResult = vulnMap.get(node.id);
-    entries.push({
+    const entry: ReportEntry = {
       name: node.name,
       version: node.version,
       id: node.id,
@@ -46,7 +61,28 @@ export function buildReport(
         severity: extractSeverity(v),
         aliases: v.aliases ?? [],
       })),
-    });
+    };
+
+    // Attach optional per-entry data
+    const advisories = options?.advisories?.get(node.id) ?? vulnResult?.advisories;
+    if (advisories && advisories.length > 0) {
+      entry.advisories = advisories;
+    }
+    if (options?.trustScores?.has(node.id)) {
+      entry.trustScore = options.trustScores.get(node.id);
+    }
+    if (options?.freshnessReports?.has(node.id)) {
+      entry.freshness = options.freshnessReports.get(node.id);
+    }
+    if (options?.enhancedLicenses?.has(node.id)) {
+      entry.enhancedLicense = options.enhancedLicenses.get(node.id);
+    }
+    const provenance = options?.provenanceResults?.find((result) => result.packageId === node.id);
+    if (provenance) {
+      entry.provenance = provenance;
+    }
+
+    entries.push(entry);
   }
 
   // Sort by depth, then name
@@ -84,6 +120,18 @@ export function buildReport(
   }
   if (options?.licenseIncompatibilities) {
     report.licenseIncompatibilities = options.licenseIncompatibilities;
+  }
+  if (options?.phantomDeps && options.phantomDeps.length > 0) {
+    report.phantomDeps = options.phantomDeps;
+  }
+  if (options?.provenanceResults && options.provenanceResults.length > 0) {
+    report.provenanceResults = options.provenanceResults;
+  }
+  if (options?.pinningReport) {
+    report.pinningReport = options.pinningReport;
+  }
+  if (options?.deepLicenseMismatches && options.deepLicenseMismatches.length > 0) {
+    report.deepLicenseMismatches = options.deepLicenseMismatches;
   }
 
   return report;

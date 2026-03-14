@@ -2,7 +2,7 @@ import chalk from "chalk";
 import Table from "cli-table3";
 import type { LicenseCategory } from "../../core/graph/types.js";
 import { getContextNotes } from "../../core/license/context-notes.js";
-import { parseLicenseComponents } from "../../core/license/spdx.js";
+import { parseLicenseComponents, renderSpdxExpression } from "../../core/license/spdx.js";
 import type { Report } from "../../core/report/types.js";
 
 export function renderTable(report: Report): void {
@@ -13,36 +13,94 @@ export function renderTable(report: Report): void {
   );
   console.log();
 
-  const table = new Table({
-    head: [
-      chalk.cyan("Package"),
-      chalk.cyan("Version"),
-      chalk.cyan("Depth"),
-      chalk.cyan("License"),
-      chalk.cyan("Vulnerabilities"),
-    ],
-    colWidths: [35, 12, 7, 20, 40],
-    wordWrap: true,
-  });
+  // Determine which optional columns to show
+  // Advisories are shown inline in the vulnerability column
+  const hasTrustScores = report.entries.some((e) => e.trustScore);
+  const hasFreshness = report.entries.some((e) => e.freshness);
+  const hasEnhancedLicense = report.entries.some((e) => e.enhancedLicense);
+  const hasProvenance = report.entries.some((e) => e.provenance);
+
+  const head = [
+    chalk.cyan("Package"),
+    chalk.cyan("Version"),
+    chalk.cyan("Depth"),
+    chalk.cyan("License"),
+    chalk.cyan("Vulnerabilities"),
+  ];
+  const colWidths: number[] = [35, 12, 7, 20, 40];
+
+  if (hasTrustScores) {
+    head.push(chalk.cyan("Trust"));
+    colWidths.push(8);
+  }
+
+  if (hasFreshness) {
+    head.push(chalk.cyan("Freshness"));
+    colWidths.push(14);
+  }
+
+  if (hasEnhancedLicense) {
+    head.push(chalk.cyan("License Intel"));
+    colWidths.push(18);
+  }
+
+  if (hasProvenance) {
+    head.push(chalk.cyan("Provenance"));
+    colWidths.push(12);
+  }
+
+  const table = new Table({ head, colWidths, wordWrap: true });
 
   for (const entry of report.entries) {
-    const vulnText =
-      entry.vulnerabilities.length > 0
-        ? entry.vulnerabilities
-            .map((v) => {
-              const sev = v.severity ? colorSeverity(v.severity) : chalk.gray("?");
-              return `${sev} ${v.id}`;
-            })
-            .join("\n")
-        : chalk.green("none");
+    let vulnText: string;
 
-    table.push([
+    if (entry.advisories && entry.advisories.length > 0) {
+      vulnText = entry.advisories
+        .map((a) => {
+          const sev = colorSeverity(a.severity.toUpperCase());
+          const malware = a.isMalware ? `${chalk.bgRed.white(" MALWARE ")} ` : "";
+          const sources = chalk.gray(`[${a.sources.join(",")}]`);
+          return `${malware}${sev} ${a.id} ${sources}`;
+        })
+        .join("\n");
+    } else if (entry.vulnerabilities.length > 0) {
+      vulnText = entry.vulnerabilities
+        .map((v) => {
+          const sev = v.severity ? colorSeverity(v.severity) : chalk.gray("?");
+          return `${sev} ${v.id}`;
+        })
+        .join("\n");
+    } else {
+      vulnText = chalk.green("none");
+    }
+
+    const row: string[] = [
       entry.name,
       entry.version,
       String(entry.depth),
       colorLicense(entry.license, entry.licenseCategory),
       vulnText,
-    ]);
+    ];
+
+    if (hasTrustScores) {
+      row.push(entry.trustScore ? colorTrustScore(entry.trustScore.overall) : chalk.gray("-"));
+    }
+
+    if (hasFreshness) {
+      row.push(entry.freshness ? colorFreshness(entry.freshness.status) : chalk.gray("-"));
+    }
+
+    if (hasEnhancedLicense) {
+      row.push(
+        entry.enhancedLicense ? formatEnhancedLicense(entry.enhancedLicense) : chalk.gray("-"),
+      );
+    }
+
+    if (hasProvenance) {
+      row.push(entry.provenance ? colorProvenance(entry.provenance.transparency) : chalk.gray("-"));
+    }
+
+    table.push(row);
   }
 
   console.log(table.toString());
@@ -75,6 +133,20 @@ export function renderTable(report: Report): void {
   // License incompatibilities
   if (report.licenseIncompatibilities && report.licenseIncompatibilities.length > 0) {
     renderIncompatibilities(report);
+  }
+
+  // Phantom dependencies
+  if (report.phantomDeps && report.phantomDeps.length > 0) {
+    renderPhantomDeps(report);
+  }
+
+  // Pinning report
+  if (report.pinningReport) {
+    renderPinningReport(report);
+  }
+
+  if (report.deepLicenseMismatches && report.deepLicenseMismatches.length > 0) {
+    renderDeepLicenseMismatches(report);
   }
 }
 
@@ -171,6 +243,130 @@ function renderIncompatibilities(report: Report): void {
   console.log();
 }
 
+function renderPhantomDeps(report: Report): void {
+  const phantoms = report.phantomDeps!;
+  console.log(chalk.bold.yellow("Phantom Dependencies:"));
+  console.log(`  Found ${phantoms.length} imported but undeclared package(s)`);
+  console.log();
+
+  const table = new Table({
+    head: [chalk.cyan("Package"), chalk.cyan("Risk"), chalk.cyan("Used In")],
+    colWidths: [30, 10, 70],
+    wordWrap: true,
+  });
+
+  for (const p of phantoms) {
+    const riskColor =
+      p.risk === "high" ? chalk.red : p.risk === "medium" ? chalk.yellow : chalk.blue;
+    table.push([
+      p.importedName,
+      riskColor(p.risk.toUpperCase()),
+      p.usedInFiles.slice(0, 3).join("\n") +
+        (p.usedInFiles.length > 3 ? `\n+${p.usedInFiles.length - 3} more` : ""),
+    ]);
+  }
+
+  console.log(table.toString());
+  console.log();
+}
+
+function renderPinningReport(report: Report): void {
+  const pr = report.pinningReport!;
+  console.log(chalk.bold("Version Pinning Analysis:"));
+  console.log(`  Total dependencies: ${pr.totalDependencies}`);
+  console.log(`  Exact pinned: ${chalk.green(String(pr.exactPinned))}`);
+  console.log(`  Caret (^): ${chalk.blue(String(pr.caretRange))}`);
+  console.log(`  Tilde (~): ${chalk.blue(String(pr.tildeRange))}`);
+  if (pr.wildcardOrStar > 0) console.log(`  Wildcard/*: ${chalk.red(String(pr.wildcardOrStar))}`);
+  if (pr.gitOrUrl > 0) console.log(`  Git/URL: ${chalk.yellow(String(pr.gitOrUrl))}`);
+  console.log(`  Drift risk: ${colorDriftRisk(pr.driftRiskScore)}/100`);
+
+  if (pr.recommendations.length > 0) {
+    console.log();
+    console.log(chalk.bold("  Recommendations:"));
+    for (const rec of pr.recommendations.slice(0, 5)) {
+      console.log(`    ${chalk.yellow(rec.name)}: ${rec.suggestion}`);
+      console.log(`      ${chalk.gray(rec.reason)}`);
+    }
+    if (pr.recommendations.length > 5) {
+      console.log(chalk.gray(`    +${pr.recommendations.length - 5} more recommendations`));
+    }
+  }
+  console.log();
+}
+
+function renderDeepLicenseMismatches(report: Report): void {
+  const mismatches = report.deepLicenseMismatches!;
+  console.log(chalk.bold.red("Deep License Mismatches:"));
+
+  const table = new Table({
+    head: [chalk.cyan("Package"), chalk.cyan("Declared"), chalk.cyan("Detected")],
+    colWidths: [30, 20, 20],
+    wordWrap: true,
+  });
+
+  for (const mismatch of mismatches) {
+    table.push([mismatch.packageId, chalk.yellow(mismatch.declared), chalk.red(mismatch.detected)]);
+  }
+
+  console.log(table.toString());
+  console.log();
+}
+
+function colorTrustScore(score: number): string {
+  if (score >= 70) return chalk.green(String(score));
+  if (score >= 40) return chalk.yellow(String(score));
+  return chalk.red(String(score));
+}
+
+function colorFreshness(status: string): string {
+  switch (status) {
+    case "current":
+      return chalk.green("current");
+    case "minor-behind":
+      return chalk.blue("minor behind");
+    case "major-behind":
+      return chalk.yellow("major behind");
+    case "outdated":
+      return chalk.red("outdated");
+    case "abandoned":
+      return chalk.bgRed.white(" abandoned ");
+    default:
+      return chalk.gray(status);
+  }
+}
+
+function formatEnhancedLicense(
+  enhanced: NonNullable<Report["entries"][number]["enhancedLicense"]>,
+): string {
+  if (enhanced.mismatch) {
+    return chalk.red(`mismatch (${enhanced.confidence})`);
+  }
+  if (enhanced.discovered || enhanced.declared) {
+    return chalk.green(`ok (${enhanced.confidence})`);
+  }
+  return chalk.gray("-");
+}
+
+function colorProvenance(transparency: string): string {
+  switch (transparency) {
+    case "full":
+      return chalk.green("full");
+    case "partial":
+      return chalk.yellow("partial");
+    case "none":
+      return chalk.red("none");
+    default:
+      return chalk.gray(transparency);
+  }
+}
+
+function colorDriftRisk(score: number): string {
+  if (score <= 20) return chalk.green(String(score));
+  if (score <= 50) return chalk.yellow(String(score));
+  return chalk.red(String(score));
+}
+
 function colorSignalSeverity(severity: string): string {
   switch (severity) {
     case "critical":
@@ -191,12 +387,14 @@ function colorSignalSeverity(severity: string): string {
 function colorLicense(license: string | null, category: LicenseCategory): string {
   if (!license) return chalk.gray("UNKNOWN");
 
-  // For compound SPDX expressions, color each component individually
-  if (license.includes(" OR ") || license.includes(" AND ")) {
-    const separator = license.includes(" OR ") ? " OR " : " AND ";
-    const components = parseLicenseComponents(license);
-    const colored = components.map((c) => colorByCategory(c.spdxId, c.category));
-    return colored.join(chalk.white(separator));
+  const components = parseLicenseComponents(license);
+  if (components.length > 1) {
+    const categories = new Map(
+      components.map((component) => [component.spdxId, component.category]),
+    );
+    return renderSpdxExpression(license, (spdxId) =>
+      colorByCategory(spdxId, categories.get(spdxId) ?? "unknown"),
+    );
   }
 
   return colorByCategory(license, category);

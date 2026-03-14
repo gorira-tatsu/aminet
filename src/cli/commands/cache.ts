@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { clearAllStores, getStoreStats } from "../../core/store/index.js";
+import { clearAllStores, getStoreStats, pruneExpiredStores } from "../../core/store/index.js";
 
 export async function cacheStatsCommand(): Promise<void> {
   const stats = getStoreStats();
@@ -8,12 +8,45 @@ export async function cacheStatsCommand(): Promise<void> {
   console.log(`  Packuments:      ${stats.packuments}`);
   console.log(`  Packages:        ${stats.packages}`);
   console.log(`  Vulnerabilities: ${stats.vulnerabilities}`);
+  console.log(`  Security signals:${stats.securitySignals}`);
+  console.log(`  License intel:   ${stats.licenseIntelligence}`);
+  console.log(`  Trust scores:    ${stats.trustScores}`);
+  console.log(`  npm downloads:   ${stats.npmDownloads}`);
+  console.log(`  deps.dev vers:   ${stats.depsdevVersions}`);
+  console.log(`  deps.dev proj:   ${stats.depsdevProjects}`);
+  console.log("");
+  console.log(chalk.bold("Expired Entries:"));
+  console.log(`  Packuments:      ${stats.expiredPackuments}`);
+  console.log(`  Vulnerabilities: ${stats.expiredVulnerabilities}`);
+  console.log(`  Security signals:${stats.expiredSecuritySignals}`);
+  console.log(`  License intel:   ${stats.expiredLicenseIntelligence}`);
+  console.log(`  Trust scores:    ${stats.expiredTrustScores}`);
+  console.log(`  npm downloads:   ${stats.expiredNpmDownloads}`);
+  console.log(`  deps.dev vers:   ${stats.expiredDepsdevVersions}`);
+  console.log(`  deps.dev proj:   ${stats.expiredDepsdevProjects}`);
   console.log(`  Database size:   ${formatBytes(stats.dbSizeBytes)}`);
 }
 
 export async function cacheClearCommand(): Promise<void> {
   clearAllStores();
   console.log(chalk.green("Cache cleared."));
+}
+
+export async function cachePruneCommand(): Promise<void> {
+  const result = pruneExpiredStores();
+  console.log(
+    chalk.green(
+      `Pruned ${result.totalDeleted} expired cache entr${result.totalDeleted === 1 ? "y" : "ies"}.`,
+    ),
+  );
+  console.log(`  Packuments:      ${result.packuments}`);
+  console.log(`  Vulnerabilities: ${result.vulnerabilities}`);
+  console.log(`  Security signals:${result.securitySignals}`);
+  console.log(`  License intel:   ${result.licenseIntelligence}`);
+  console.log(`  Trust scores:    ${result.trustScores}`);
+  console.log(`  npm downloads:   ${result.npmDownloads}`);
+  console.log(`  deps.dev vers:   ${result.depsdevVersions}`);
+  console.log(`  deps.dev proj:   ${result.depsdevProjects}`);
 }
 
 function formatBytes(bytes: number): string {

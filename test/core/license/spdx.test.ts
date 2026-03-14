@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { parseLicenseComponents } from "../../../src/core/license/spdx.js";
+import {
+  getLicenseAlternatives,
+  parseLicenseComponents,
+  parseSpdxExpression,
+  renderSpdxExpression,
+} from "../../../src/core/license/spdx.js";
 
 describe("parseLicenseComponents", () => {
   test("parses single license", () => {
@@ -40,5 +45,23 @@ describe("parseLicenseComponents", () => {
     const result = parseLicenseComponents("MIT OR LGPL-2.1");
     expect(result[0].category).toBe("permissive");
     expect(result[1].category).toBe("weak-copyleft");
+  });
+
+  test("parses nested expressions with parentheses", () => {
+    const result = parseSpdxExpression("MIT OR (GPL-2.0 AND LGPL-2.1)");
+    expect(result).not.toBeNull();
+  });
+
+  test("extracts alternatives from nested expressions", () => {
+    const result = getLicenseAlternatives("MIT OR (GPL-2.0 AND LGPL-2.1)");
+    expect(result).toEqual([["MIT"], ["GPL-2.0", "LGPL-2.1"]]);
+  });
+
+  test("renders nested expressions while preserving parentheses", () => {
+    const rendered = renderSpdxExpression(
+      "MIT OR (GPL-2.0 AND LGPL-2.1)",
+      (license) => `[${license}]`,
+    );
+    expect(rendered).toBe("[MIT] OR ([GPL-2.0] AND [LGPL-2.1])");
   });
 });

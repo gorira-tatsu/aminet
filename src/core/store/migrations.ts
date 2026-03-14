@@ -68,6 +68,65 @@ CREATE TABLE IF NOT EXISTS security_signals (
 );
 `;
 
+const MIGRATION_V5 = `
+ALTER TABLE vulnerabilities ADD COLUMN advisory_sources TEXT DEFAULT 'osv';
+ALTER TABLE vulnerabilities ADD COLUMN normalized_advisories TEXT;
+`;
+
+const MIGRATION_V6 = `
+CREATE TABLE IF NOT EXISTS license_intelligence (
+  ecosystem TEXT NOT NULL DEFAULT 'npm',
+  name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  declared_license TEXT,
+  discovered_license TEXT,
+  confidence TEXT NOT NULL,
+  attribution_parties TEXT,
+  fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (ecosystem, name, version)
+);
+`;
+
+const MIGRATION_V7 = `
+CREATE TABLE IF NOT EXISTS trust_scores (
+  ecosystem TEXT NOT NULL DEFAULT 'npm',
+  name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  overall_score INTEGER NOT NULL,
+  breakdown TEXT NOT NULL,
+  signals TEXT NOT NULL,
+  has_provenance INTEGER NOT NULL DEFAULT 0,
+  scorecard_score REAL,
+  computed_at INTEGER NOT NULL,
+  PRIMARY KEY (ecosystem, name, version)
+);
+`;
+
+const MIGRATION_V8 = `
+CREATE TABLE IF NOT EXISTS npm_downloads_cache (
+  ecosystem TEXT NOT NULL DEFAULT 'npm',
+  name TEXT NOT NULL,
+  weekly_downloads INTEGER,
+  fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (ecosystem, name)
+);
+
+CREATE TABLE IF NOT EXISTS depsdev_versions_cache (
+  ecosystem TEXT NOT NULL DEFAULT 'npm',
+  name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  data TEXT,
+  fetched_at INTEGER NOT NULL,
+  PRIMARY KEY (ecosystem, name, version)
+);
+
+CREATE TABLE IF NOT EXISTS depsdev_projects_cache (
+  project_id TEXT PRIMARY KEY,
+  data TEXT,
+  fetched_at INTEGER NOT NULL
+);
+`;
+
 export function runMigrations(db: Database): void {
   const currentVersion = getSchemaVersion(db);
 
@@ -85,7 +144,15 @@ export function runMigrations(db: Database): void {
       /* columns may exist */
     }
     db.exec(MIGRATION_V4);
-    setSchemaVersion(db, 4);
+    try {
+      db.exec(MIGRATION_V5);
+    } catch {
+      /* columns may exist */
+    }
+    db.exec(MIGRATION_V6);
+    db.exec(MIGRATION_V7);
+    db.exec(MIGRATION_V8);
+    setSchemaVersion(db, 8);
     return;
   }
 
@@ -110,6 +177,30 @@ export function runMigrations(db: Database): void {
   if (currentVersion < 4) {
     db.exec(MIGRATION_V4);
     setSchemaVersion(db, 4);
+  }
+
+  if (currentVersion < 5) {
+    try {
+      db.exec(MIGRATION_V5);
+    } catch {
+      /* columns may exist */
+    }
+    setSchemaVersion(db, 5);
+  }
+
+  if (currentVersion < 6) {
+    db.exec(MIGRATION_V6);
+    setSchemaVersion(db, 6);
+  }
+
+  if (currentVersion < 7) {
+    db.exec(MIGRATION_V7);
+    setSchemaVersion(db, 7);
+  }
+
+  if (currentVersion < 8) {
+    db.exec(MIGRATION_V8);
+    setSchemaVersion(db, 8);
   }
 }
 

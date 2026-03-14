@@ -4,7 +4,12 @@ export type SignalCategory =
   | "typosquatting"
   | "maintainer-risk"
   | "publish-anomaly"
-  | "deprecated";
+  | "deprecated"
+  | "low-trust"
+  | "abandoned"
+  | "no-provenance"
+  | "phantom-dependency"
+  | "dependency-confusion";
 
 export interface SecuritySignal {
   category: SignalCategory;

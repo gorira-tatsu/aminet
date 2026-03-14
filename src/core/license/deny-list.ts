@@ -1,4 +1,5 @@
 import type { ReportEntry } from "../report/types.js";
+import { getLicenseAlternatives } from "./spdx.js";
 
 export interface DenyListViolation {
   packageId: string;
@@ -17,39 +18,24 @@ export function checkDenyList(entries: ReportEntry[], denied: string[]): DenyLis
     if (!entry.license) continue;
 
     const license = entry.license;
+    const alternatives = getLicenseAlternatives(license);
+    if (alternatives.length === 0) continue;
 
-    if (license.includes(" OR ")) {
-      const parts = license.split(" OR ").map((p) => p.trim());
-      const matchedDenied = parts.filter((p) => deniedSet.has(p));
-      if (matchedDenied.length > 0) {
-        violations.push({
-          packageId: entry.id,
-          license,
-          deniedIds: matchedDenied,
-          isOrExpression: true,
-        });
-      }
-    } else if (license.includes(" AND ")) {
-      const parts = license.split(" AND ").map((p) => p.trim());
-      const matchedDenied = parts.filter((p) => deniedSet.has(p));
-      if (matchedDenied.length > 0) {
-        violations.push({
-          packageId: entry.id,
-          license,
-          deniedIds: matchedDenied,
-          isOrExpression: false,
-        });
-      }
-    } else {
-      if (deniedSet.has(license)) {
-        violations.push({
-          packageId: entry.id,
-          license,
-          deniedIds: [license],
-          isOrExpression: false,
-        });
-      }
+    const matchedDenied = [...new Set(alternatives.flat().filter((part) => deniedSet.has(part)))];
+    if (matchedDenied.length === 0) {
+      continue;
     }
+
+    const hasSafeAlternative = alternatives.some(
+      (alternative) => !alternative.some((part) => deniedSet.has(part)),
+    );
+
+    violations.push({
+      packageId: entry.id,
+      license,
+      deniedIds: matchedDenied,
+      isOrExpression: hasSafeAlternative,
+    });
   }
 
   return violations;

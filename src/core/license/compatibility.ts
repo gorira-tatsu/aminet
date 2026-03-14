@@ -4,6 +4,7 @@ import type {
   CompatibilityResult,
   IncompatiblePair,
 } from "./compatibility-types.js";
+import { getLicenseAlternatives } from "./spdx.js";
 
 interface CompatibilityRule {
   a: string;
@@ -220,49 +221,68 @@ export function checkCompatibility(a: string, b: string): CompatibilityCheck {
 export function checkTreeCompatibility(graph: DependencyGraph): IncompatiblePair[] {
   const incompatible: IncompatiblePair[] = [];
   const seen = new Set<string>();
+  const licensedNodes = [...graph.nodes.values()].filter((node) => node.depth > 0 && node.license);
 
-  // Get all unique license-package pairs
-  const licensePackages = new Map<string, string[]>();
-  for (const node of graph.nodes.values()) {
-    if (node.depth === 0 || !node.license) continue;
-
-    // Normalize compound expressions - check each component
-    const licenses = node.license.includes(" OR ")
-      ? node.license.split(" OR ").map((l) => l.trim())
-      : [node.license];
-
-    for (const license of licenses) {
-      if (!licensePackages.has(license)) {
-        licensePackages.set(license, []);
-      }
-      licensePackages.get(license)!.push(node.id);
-    }
-  }
-
-  // Check all pairs of distinct licenses
-  const allLicenses = [...licensePackages.keys()];
-  for (let i = 0; i < allLicenses.length; i++) {
-    for (let j = i + 1; j < allLicenses.length; j++) {
-      const licA = allLicenses[i];
-      const licB = allLicenses[j];
-      const pairKey = [licA, licB].sort().join(":");
+  for (let i = 0; i < licensedNodes.length; i++) {
+    for (let j = i + 1; j < licensedNodes.length; j++) {
+      const nodeA = licensedNodes[i];
+      const nodeB = licensedNodes[j];
+      const pairKey = [nodeA.id, nodeB.id].sort().join(":");
       if (seen.has(pairKey)) continue;
       seen.add(pairKey);
 
-      const check = checkCompatibility(licA, licB);
-      if (check.result === "incompatible") {
-        const pkgsA = licensePackages.get(licA) ?? [];
-        const pkgsB = licensePackages.get(licB) ?? [];
-        incompatible.push({
-          licenseA: licA,
-          licenseB: licB,
-          packageA: pkgsA[0] ?? "?",
-          packageB: pkgsB[0] ?? "?",
-          explanation: check.explanation,
-        });
-      }
+      const conflict = findExpressionConflict(nodeA.license!, nodeB.license!);
+      if (!conflict) continue;
+
+      incompatible.push({
+        licenseA: conflict.licenseA,
+        licenseB: conflict.licenseB,
+        packageA: nodeA.id,
+        packageB: nodeB.id,
+        explanation: conflict.explanation,
+      });
     }
   }
 
   return incompatible;
+}
+
+function findExpressionConflict(
+  licenseA: string,
+  licenseB: string,
+): { licenseA: string; licenseB: string; explanation: string } | null {
+  const alternativesA = getLicenseAlternatives(licenseA);
+  const alternativesB = getLicenseAlternatives(licenseB);
+  let firstConflict: { licenseA: string; licenseB: string; explanation: string } | null = null;
+
+  for (const alternativeA of alternativesA) {
+    for (const alternativeB of alternativesB) {
+      const conflict = findAlternativeConflict(alternativeA, alternativeB);
+      if (!conflict) {
+        return null;
+      }
+      firstConflict ??= conflict;
+    }
+  }
+
+  return firstConflict;
+}
+
+function findAlternativeConflict(
+  alternativeA: string[],
+  alternativeB: string[],
+): { licenseA: string; licenseB: string; explanation: string } | null {
+  for (const licenseA of alternativeA) {
+    for (const licenseB of alternativeB) {
+      const check = checkCompatibility(licenseA, licenseB);
+      if (check.result === "incompatible") {
+        return {
+          licenseA,
+          licenseB,
+          explanation: check.explanation,
+        };
+      }
+    }
+  }
+  return null;
 }

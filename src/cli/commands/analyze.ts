@@ -1,21 +1,26 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import chalk from "chalk";
 import ora from "ora";
+import { runAnalysisPhases } from "../../core/analysis/phases.js";
 import { buildReportFromPackageJson } from "../../core/analyzer.js";
 import { loadConfig } from "../../core/config/loader.js";
 import type { AmiConfig } from "../../core/config/types.js";
 import { resolveDependencyGraph } from "../../core/graph/resolver.js";
 import type { DependencyGraph } from "../../core/graph/types.js";
-import { checkTreeCompatibility } from "../../core/license/compatibility.js";
-import { traceContaminationPaths } from "../../core/license/contamination.js";
 import { checkDenyList } from "../../core/license/deny-list.js";
-import { extractLicenseFiles } from "../../core/license/tarball-checker.js";
+import { getLicenseAlternatives } from "../../core/license/spdx.js";
+import { tryParseLockfile } from "../../core/lockfile/parser.js";
+import type { PhantomDependency } from "../../core/phantom/scanner.js";
+import { scanPhantomDependencies } from "../../core/phantom/scanner.js";
+import type { PinningReport } from "../../core/pinning/analyzer.js";
+import { analyzeVersionPinning } from "../../core/pinning/analyzer.js";
 import { setNpmCacheEnabled } from "../../core/registry/npm-client.js";
-import type { BuildReportOptions } from "../../core/report/builder.js";
 import { buildReport } from "../../core/report/builder.js";
 import type { Report } from "../../core/report/types.js";
-import { scanSecuritySignals } from "../../core/security/scanner.js";
 import { getDatabase } from "../../core/store/database.js";
+import type { VulnSource } from "../../core/vulnerability/aggregator.js";
 import { scanVulnerabilities } from "../../core/vulnerability/scanner.js";
 import type { VulnerabilityResult } from "../../core/vulnerability/types.js";
 import { logger, setLogLevel } from "../../utils/logger.js";
@@ -64,7 +69,19 @@ export async function analyzeCommand(target: string, options: AnalyzeOptions): P
   const useSpinner =
     !isCi && !options.dot && !options.mermaid && !options.cyclonedx && !options.spdx;
 
-  if (options.file) {
+  // Auto-detect file mode: if target looks like a file path, treat it as --file
+  const isFilePath =
+    options.file ||
+    target.endsWith(".json") ||
+    target === "package.json" ||
+    target.includes("/") ||
+    target.includes("\\") ||
+    target.endsWith(".lock") ||
+    target === "bun.lock" ||
+    target === "bun.lockb" ||
+    target === "package-lock.json";
+
+  if (isFilePath) {
     await analyzeFile(target, options, config, useSpinner);
     return;
   }
@@ -104,7 +121,26 @@ async function analyzeFile(
   config: AmiConfig,
   useSpinner: boolean,
 ): Promise<void> {
-  const content = await readFile(filePath, "utf-8");
+  // If user passed a lockfile, find the package.json in the same directory
+  let packageJsonPath = filePath;
+  const fileBaseName = basename(filePath);
+  if (
+    fileBaseName === "bun.lock" ||
+    fileBaseName === "bun.lockb" ||
+    fileBaseName === "package-lock.json"
+  ) {
+    const dir = dirname(filePath);
+    packageJsonPath = join(dir, "package.json");
+    if (!existsSync(packageJsonPath)) {
+      console.error(
+        chalk.red(`No package.json found alongside ${filePath}. Lockfiles need a package.json.`),
+      );
+      process.exit(1);
+    }
+    logger.info(`Found package.json at ${packageJsonPath}`);
+  }
+
+  const content = await readFile(packageJsonPath, "utf-8");
   const pkg = JSON.parse(content);
 
   const allDeps: Record<string, string> = {
@@ -114,16 +150,46 @@ async function analyzeFile(
 
   const depEntries = Object.entries(allDeps);
   if (depEntries.length === 0) {
-    console.error(chalk.yellow(`No dependencies found in ${filePath}`));
+    console.error(chalk.yellow(`No dependencies found in ${packageJsonPath}`));
     return;
   }
 
+  // Try to find a lockfile for pinned versions
+  const lockfile = await tryParseLockfile(packageJsonPath);
+  if (lockfile) {
+    // Override version ranges with pinned versions from lockfile
+    let pinned = 0;
+    for (const [name] of Object.entries(allDeps)) {
+      const pinnedVersion = lockfile.packages.get(name);
+      if (pinnedVersion) {
+        allDeps[name] = pinnedVersion;
+        pinned++;
+      }
+    }
+    if (pinned > 0) {
+      logger.info(`Pinned ${pinned}/${depEntries.length} dependencies from ${lockfile.format}`);
+      // Update pkg object so buildReportFromPackageJson uses pinned versions
+      pkg.dependencies = { ...(pkg.dependencies ?? {}) };
+      if (options.dev && pkg.devDependencies) {
+        pkg.devDependencies = { ...pkg.devDependencies };
+      }
+      for (const [name, version] of Object.entries(allDeps)) {
+        if (pkg.dependencies?.[name]) {
+          pkg.dependencies[name] = version;
+        }
+        if (options.dev && pkg.devDependencies?.[name]) {
+          pkg.devDependencies[name] = version;
+        }
+      }
+    }
+  }
+
   const spinner = useSpinner
-    ? ora(`Analyzing ${depEntries.length} dependencies from ${filePath}...`).start()
+    ? ora(`Analyzing ${depEntries.length} dependencies from ${packageJsonPath}...`).start()
     : null;
 
   if (!useSpinner) {
-    logger.info(`Analyzing ${depEntries.length} dependencies from ${filePath}`);
+    logger.info(`Analyzing ${depEntries.length} dependencies from ${packageJsonPath}`);
   }
 
   // Use buildReportFromPackageJson for file analysis
@@ -141,12 +207,38 @@ async function analyzeFile(
   // Apply license overrides
   applyLicenseOverrides(result.graph, config);
 
-  // Deep license check
-  if (options.deepLicenseCheck) {
-    await deepLicenseCheckPhase(result.graph, useSpinner);
+  // Phantom dependencies (file-mode only)
+  let phantomDeps: PhantomDependency[] | undefined;
+  if (options.phantom) {
+    const projectDir = dirname(packageJsonPath);
+    const spinner2 = useSpinner ? ora("Scanning for phantom dependencies...").start() : null;
+    try {
+      phantomDeps = await scanPhantomDependencies(projectDir, allDeps);
+      if (spinner2) {
+        if (phantomDeps.length > 0) {
+          spinner2.warn(chalk.yellow(`Found ${phantomDeps.length} phantom dependencies`));
+        } else {
+          spinner2.succeed("No phantom dependencies found");
+        }
+      }
+    } catch {
+      if (spinner2) spinner2.warn("Phantom dependency scan failed");
+    }
   }
 
-  outputAndExit(result.graph, result.vulnerabilities, options, config);
+  // Version pinning analysis (file-mode only)
+  let pinningReport: PinningReport | undefined;
+  if (options.pinning) {
+    pinningReport = analyzeVersionPinning(
+      { ...(pkg.dependencies ?? {}), ...(options.dev ? (pkg.devDependencies ?? {}) : {}) },
+      lockfile ?? null,
+    );
+  }
+
+  outputAndExit(result.graph, result.vulnerabilities, options, config, {
+    phantomDeps,
+    pinningReport,
+  });
 }
 
 async function analyzePackage(
@@ -195,12 +287,10 @@ async function analyzePackage(
   // Apply license overrides
   applyLicenseOverrides(graph, config);
 
-  const vulnerabilities = await scanPhase(graph, options, useSpinner);
+  // Parse vuln sources
+  const vulnSources = parseVulnSources(options.vulnSources);
 
-  // Deep license check
-  if (options.deepLicenseCheck) {
-    await deepLicenseCheckPhase(graph, useSpinner);
-  }
+  const vulnerabilities = await scanPhase(graph, options, useSpinner, vulnSources);
 
   outputAndExit(graph, vulnerabilities, options, config);
 }
@@ -219,72 +309,11 @@ function applyLicenseOverrides(graph: DependencyGraph, config: AmiConfig): void 
   }
 }
 
-async function deepLicenseCheckPhase(graph: DependencyGraph, useSpinner: boolean): Promise<void> {
-  const spinner = useSpinner ? ora("Checking LICENSE files from tarballs...").start() : null;
-
-  if (!useSpinner) {
-    logger.info("Checking LICENSE files from tarballs...");
-  }
-
-  let checked = 0;
-  let mismatches = 0;
-  const warnings: string[] = [];
-
-  const { getPackument } = require("../../core/registry/npm-client.js");
-
-  for (const node of graph.nodes.values()) {
-    if (node.depth === 0) continue;
-
-    try {
-      const packument = await getPackument(node.name);
-      const versionInfo = packument.versions?.[node.version];
-      if (!versionInfo?.dist?.tarball) continue;
-
-      const result = await extractLicenseFiles(versionInfo.dist.tarball);
-      checked++;
-
-      if (result.detectedLicense && node.license) {
-        if (result.detectedLicense !== node.license) {
-          const declared = node.license;
-          const detected = result.detectedLicense;
-          if (!isLicenseVariant(declared, detected)) {
-            mismatches++;
-            const msg = `${node.id}: package.json declares "${declared}" but LICENSE file suggests "${detected}"`;
-            warnings.push(msg);
-          }
-        }
-      }
-
-      if (spinner) {
-        spinner.text = `Checking LICENSE files... (${checked} checked, ${mismatches} mismatches)`;
-      }
-    } catch {
-      // Skip packages we can't check
-    }
-  }
-
-  if (spinner) {
-    if (mismatches > 0) {
-      spinner.warn(`Checked ${checked} LICENSE files, ${mismatches} mismatch(es)`);
-    } else {
-      spinner.succeed(`Checked ${checked} LICENSE files, no mismatches`);
-    }
-  }
-
-  for (const w of warnings) {
-    console.error(chalk.yellow(`  ⚠ ${w}`));
-  }
-}
-
-function isLicenseVariant(declared: string, detected: string): boolean {
-  const normalize = (s: string) => s.replace(/-only$/, "").replace(/-or-later$/, "");
-  return normalize(declared) === normalize(detected);
-}
-
 async function scanPhase(
   graph: DependencyGraph,
   options: AnalyzeOptions,
   useSpinner: boolean,
+  vulnSources?: VulnSource[],
 ): Promise<VulnerabilityResult[]> {
   const spinner = useSpinner ? ora("Scanning for vulnerabilities...").start() : null;
 
@@ -294,7 +323,12 @@ async function scanPhase(
 
   let vulnerabilities: VulnerabilityResult[];
   try {
-    vulnerabilities = await scanVulnerabilities(graph, options.concurrency ?? 5, !options.noCache);
+    vulnerabilities = await scanVulnerabilities(
+      graph,
+      options.concurrency ?? 5,
+      !options.noCache,
+      vulnSources,
+    );
     const totalVulns = vulnerabilities.reduce((sum, v) => sum + v.vulnerabilities.length, 0);
     if (totalVulns > 0) {
       if (spinner) {
@@ -317,55 +351,51 @@ async function scanPhase(
   return vulnerabilities;
 }
 
+interface ExtraReportData {
+  phantomDeps?: PhantomDependency[];
+  pinningReport?: PinningReport;
+}
+
 async function outputAndExit(
   graph: DependencyGraph,
   vulnerabilities: VulnerabilityResult[],
   options: AnalyzeOptions,
   config: AmiConfig,
+  extra?: ExtraReportData,
 ): Promise<void> {
-  // Build report options with optional security/license data
-  const reportOptions: BuildReportOptions = {};
+  const isCi = options.ci || false;
+  const useSpinner =
+    !isCi && !options.dot && !options.mermaid && !options.cyclonedx && !options.spdx;
 
-  // Phase 3: Security scan
-  if (options.security) {
-    const useSpinner =
-      !options.ci && !options.dot && !options.mermaid && !options.cyclonedx && !options.spdx;
-    const spinner = useSpinner ? ora("Running security analysis...").start() : null;
-
-    try {
-      const securityResult = await scanSecuritySignals(graph);
-      reportOptions.securitySignals = securityResult.signals;
-      reportOptions.securitySummary = securityResult.summary;
-
-      const totalSignals = securityResult.signals.length;
-      if (spinner) {
-        if (totalSignals > 0) {
-          spinner.warn(
-            chalk.yellow(
-              `Found ${totalSignals} security signals (${securityResult.summary.highCount} high, ${securityResult.summary.mediumCount} medium)`,
-            ),
-          );
-        } else {
-          spinner.succeed("No security signals found");
-        }
-      }
-    } catch (_error) {
-      if (spinner) {
-        spinner.warn("Security scan failed, continuing without results");
-      }
+  let reportOptions = {};
+  const phaseSpinner = useSpinner ? ora("Running analysis phases...").start() : null;
+  try {
+    const phaseResult = await runAnalysisPhases(
+      graph,
+      {
+        concurrency: options.concurrency,
+        noCache: options.noCache,
+        security: options.security,
+        licenseReport: options.licenseReport,
+        enhancedLicense: options.enhancedLicense,
+        trustScore: options.trustScore,
+        freshness: options.freshness,
+        provenance: options.provenance,
+        minTrustScore: options.minTrustScore,
+        deepLicenseCheck: options.deepLicenseCheck,
+      },
+      {
+        phantomDeps: extra?.phantomDeps,
+        pinningReport: extra?.pinningReport,
+      },
+    );
+    reportOptions = phaseResult.reportOptions;
+    if (phaseSpinner) {
+      phaseSpinner.succeed("Analysis phases complete");
     }
-  }
-
-  // Phase 4: License report
-  if (options.licenseReport) {
-    const contamination = traceContaminationPaths(graph);
-    if (contamination.paths.length > 0) {
-      reportOptions.contaminationPaths = contamination.paths;
-    }
-
-    const incompatible = checkTreeCompatibility(graph);
-    if (incompatible.length > 0) {
-      reportOptions.licenseIncompatibilities = incompatible;
+  } catch {
+    if (phaseSpinner) {
+      phaseSpinner.warn("Optional analysis phases failed, continuing with core report");
     }
   }
 
@@ -405,10 +435,9 @@ async function outputAndExit(
       console.error(chalk.red.bold("Deny-list violations:"));
       for (const v of violations) {
         if (v.isOrExpression) {
-          const nonDenied = v.license
-            .split(" OR ")
-            .map((p) => p.trim())
-            .filter((p) => !v.deniedIds.includes(p));
+          const nonDenied = getLicenseAlternatives(v.license)
+            .filter((alternative) => !alternative.some((part) => v.deniedIds.includes(part)))
+            .map((alternative) => alternative.join(" AND "));
           console.error(
             chalk.yellow(
               `  ⚠ ${v.packageId}: "${v.license}" contains denied ${v.deniedIds.join(", ")} (can use ${nonDenied.join(" or ")} instead)`,
@@ -421,8 +450,9 @@ async function outputAndExit(
 
       const hardViolations = violations.filter((v) => {
         if (!v.isOrExpression) return true;
-        const parts = v.license.split(" OR ").map((p) => p.trim());
-        return parts.every((p) => denied.includes(p));
+        return getLicenseAlternatives(v.license).every((alternative) =>
+          alternative.some((part) => denied.includes(part)),
+        );
       });
       if (hardViolations.length > 0) {
         denyListExitCode = 4;
@@ -435,8 +465,9 @@ async function outputAndExit(
     const allowSet = new Set(config.allowLicenses);
     const unlisted = report.entries.filter((e) => {
       if (!e.license) return true;
-      const parts = e.license.split(/ (?:OR|AND) /).map((p) => p.trim());
-      return !parts.some((p) => allowSet.has(p));
+      return !getLicenseAlternatives(e.license).some((alternative) =>
+        alternative.every((part) => allowSet.has(part)),
+      );
     });
 
     if (unlisted.length > 0) {
@@ -450,7 +481,7 @@ async function outputAndExit(
 
   // CI exit codes
   let exitCode = denyListExitCode;
-  if (options.failOnVuln || options.failOnLicense) {
+  if (options.failOnVuln || options.failOnLicense || options.minTrustScore) {
     exitCode |= computeExitCode(report, options);
 
     // Write GitHub Actions step summary if available
@@ -502,6 +533,14 @@ function computeExitCode(report: Report, options: AnalyzeOptions): number {
     }
 
     if (licenseViolation) code |= 2;
+  }
+
+  // Trust score threshold
+  if (options.minTrustScore) {
+    const belowThreshold = report.entries.some(
+      (e) => e.trustScore && e.trustScore.overall < options.minTrustScore!,
+    );
+    if (belowThreshold) code |= 8;
   }
 
   return code;
@@ -562,4 +601,9 @@ function parsePackageSpec(spec: string): {
   }
 
   return { name: spec, versionRange: "latest" };
+}
+
+function parseVulnSources(sourcesStr?: string): VulnSource[] | undefined {
+  if (!sourcesStr) return undefined;
+  return sourcesStr.split(",").map((s) => s.trim() as VulnSource);
 }

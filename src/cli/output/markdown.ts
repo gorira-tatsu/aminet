@@ -25,6 +25,8 @@ export function renderMarkdownComment(diff: DependencyDiff): string {
   lines.push(`| Updated | ${diff.summary.updatedCount} |`);
   lines.push(`| New Vulnerabilities | ${diff.summary.newVulnCount} |`);
   lines.push(`| Resolved Vulnerabilities | ${diff.summary.resolvedVulnCount} |`);
+  lines.push(`| New Security Signals | ${diff.summary.newSecuritySignalCount} |`);
+  lines.push(`| Resolved Security Signals | ${diff.summary.resolvedSecuritySignalCount} |`);
   lines.push(`| License Changes | ${diff.summary.licenseChangeCount} |`);
   lines.push("");
 
@@ -96,6 +98,36 @@ export function renderMarkdownComment(diff: DependencyDiff): string {
     for (const vc of diff.resolvedVulnerabilities) {
       for (const v of vc.vulnerabilities) {
         lines.push(`| ${vc.name} | ${vc.version} | ${v.id} | ${v.severity ?? "?"} |`);
+      }
+    }
+    lines.push("");
+  }
+
+  if (diff.newSecuritySignals.length > 0) {
+    lines.push("### New Security Signals");
+    lines.push("");
+    lines.push("| Package | Severity | Category | Title |");
+    lines.push("|---------|----------|----------|-------|");
+    for (const change of diff.newSecuritySignals) {
+      for (const signal of change.signals) {
+        lines.push(
+          `| ${change.name} | ${signal.severity.toUpperCase()} | ${signal.category} | ${signal.title} |`,
+        );
+      }
+    }
+    lines.push("");
+  }
+
+  if (diff.resolvedSecuritySignals.length > 0) {
+    lines.push("### Resolved Security Signals");
+    lines.push("");
+    lines.push("| Package | Severity | Category | Title |");
+    lines.push("|---------|----------|----------|-------|");
+    for (const change of diff.resolvedSecuritySignals) {
+      for (const signal of change.signals) {
+        lines.push(
+          `| ${change.name} | ${signal.severity.toUpperCase()} | ${signal.category} | ${signal.title} |`,
+        );
       }
     }
     lines.push("");

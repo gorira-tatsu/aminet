@@ -1,4 +1,50 @@
 /**
+ * Host-based circuit breaker to stop hammering APIs that return 429s.
+ * After `threshold` consecutive failures for a host, the circuit opens for `cooldownMs`.
+ */
+class HostCircuitBreaker {
+  private failures = new Map<string, { count: number; openUntil: number }>();
+
+  constructor(
+    private readonly threshold = 3,
+    private readonly cooldownMs = 30_000,
+  ) {}
+
+  isOpen(host: string): boolean {
+    const state = this.failures.get(host);
+    if (!state) return false;
+    if (state.count < this.threshold) return false;
+    if (Date.now() >= state.openUntil) {
+      this.failures.delete(host);
+      return false;
+    }
+    return true;
+  }
+
+  recordFailure(host: string): void {
+    const state = this.failures.get(host);
+    if (state) {
+      state.count++;
+      if (state.count >= this.threshold) {
+        state.openUntil = Date.now() + this.cooldownMs;
+      }
+    } else {
+      this.failures.set(host, { count: 1, openUntil: 0 });
+    }
+  }
+
+  recordSuccess(host: string): void {
+    this.failures.delete(host);
+  }
+
+  reset(): void {
+    this.failures.clear();
+  }
+}
+
+export const circuitBreaker = new HostCircuitBreaker();
+
+/**
  * Token bucket rate limiter.
  * Provides time-based rate limiting in addition to Semaphore's concurrency limiting.
  */

@@ -22,6 +22,17 @@ export interface AnalyzeOptions {
   security?: boolean; // enable security deep analysis
   // Phase 4: License enhancement
   licenseReport?: boolean; // contamination paths + compatibility check
+  // Phase 5: Multi-source vulnerabilities + License intelligence
+  vulnSources?: string; // comma-separated: osv,ghsa,npm-audit
+  enhancedLicense?: boolean; // ClearlyDefined license intelligence
+  // Phase 6: Trust score + Freshness
+  trustScore?: boolean; // enable trust score computation
+  freshness?: boolean; // enable dependency freshness analysis
+  minTrustScore?: number; // CI: fail if any package below this score
+  // Phase 7: Supply chain defense
+  phantom?: boolean; // detect phantom dependencies
+  provenance?: boolean; // check npm provenance attestations
+  pinning?: boolean; // analyze version pinning strategy
 }
 
 export interface ReviewOptions extends AnalyzeOptions {

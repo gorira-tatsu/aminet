@@ -1,4 +1,5 @@
 import { logger } from "../utils/logger.js";
+import { runAnalysisPhases } from "./analysis/phases.js";
 import { resolveDependencyGraph } from "./graph/resolver.js";
 import type { DependencyEdge, DependencyGraph, PackageNode } from "./graph/types.js";
 import { buildReport } from "./report/builder.js";
@@ -11,6 +12,14 @@ export interface AnalyzerOptions {
   concurrency?: number;
   dev?: boolean;
   noCache?: boolean;
+  security?: boolean;
+  licenseReport?: boolean;
+  enhancedLicense?: boolean;
+  trustScore?: boolean;
+  freshness?: boolean;
+  provenance?: boolean;
+  minTrustScore?: number;
+  deepLicenseCheck?: boolean;
 }
 
 export interface AnalysisResult {
@@ -97,7 +106,13 @@ export async function buildReportFromPackageJson(
     !options.noCache,
   ).catch(() => [] as VulnerabilityResult[]);
 
-  const report = buildReport(graph, vulnerabilities);
+  const { reportOptions } = await runAnalysisPhases(graph, options).catch(() => ({
+    reportOptions: {},
+    sharedPackuments: new Map(),
+    lowTrustCount: 0,
+  }));
+
+  const report = buildReport(graph, vulnerabilities, reportOptions);
 
   return { graph, vulnerabilities, report };
 }

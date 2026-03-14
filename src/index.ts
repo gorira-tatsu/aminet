@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
 import { analyzeCommand } from "./cli/commands/analyze.js";
-import { cacheClearCommand, cacheStatsCommand } from "./cli/commands/cache.js";
+import { cacheClearCommand, cachePruneCommand, cacheStatsCommand } from "./cli/commands/cache.js";
 import { reviewCommand } from "./cli/commands/review.js";
 
 const program = new Command();
@@ -15,7 +15,7 @@ program
 program
   .command("analyze")
   .description("Analyze dependencies, licenses, and vulnerabilities")
-  .argument("<package>", "Package to analyze (e.g., express@4.21.2)")
+  .argument("<package>", "Package (e.g., express@4.21.2) or file path (package.json, bun.lock)")
   .option("--json", "Output as JSON")
   .option("--tree", "Output as dependency tree")
   .option("--dot", "Output as Graphviz DOT format")
@@ -23,7 +23,7 @@ program
   .option("-d, --depth <number>", "Maximum dependency depth", parseInt)
   .option("-c, --concurrency <number>", "Maximum concurrent requests", parseInt)
   .option("--dev", "Include devDependencies")
-  .option("--file", "Treat argument as path to package.json")
+  .option("--file", "Force file mode (auto-detected for .json/.lock paths)")
   .option("--no-cache", "Skip cache reads (still writes)")
   .option("-v, --verbose", "Verbose logging")
   .option("--ci", "CI mode (no spinner, exit codes enabled)")
@@ -45,6 +45,21 @@ program
   .option("--spdx", "Output SPDX 2.3 SBOM")
   .option("--security", "Enable security deep analysis")
   .option("--license-report", "Enable GPL contamination trace and compatibility check")
+  // Phase 5: Multi-source vulnerabilities
+  .option("--vuln-sources <sources>", "Comma-separated vulnerability sources (osv,ghsa,npm-audit)")
+  .option("--enhanced-license", "Enable ClearlyDefined license intelligence")
+  // Phase 6: Trust score + Freshness
+  .option("--trust-score", "Compute package trust scores (OpenSSF Scorecard + downloads)")
+  .option("--freshness", "Analyze dependency freshness")
+  .option(
+    "--min-trust-score <number>",
+    "Exit non-zero if any package trust score is below threshold",
+    parseInt,
+  )
+  // Phase 7: Supply chain defense
+  .option("--phantom", "Detect phantom (undeclared) dependencies")
+  .option("--provenance", "Check npm provenance attestations")
+  .option("--pinning", "Analyze version pinning strategy")
   .action(analyzeCommand);
 
 // ci command (alias for analyze --ci --json)
@@ -59,6 +74,9 @@ program
   .option("--fail-on-license <category>", "Exit non-zero on license category")
   .option("--deny-license <licenses>", "Comma-separated list of SPDX IDs to deny")
   .option("--security", "Enable security deep analysis")
+  .option("--vuln-sources <sources>", "Comma-separated vulnerability sources")
+  .option("--trust-score", "Compute package trust scores")
+  .option("--min-trust-score <number>", "Fail if trust score below threshold", parseInt)
   .action((target, opts) => {
     return analyzeCommand(target, { ...opts, ci: true, json: true });
   });
@@ -87,5 +105,7 @@ const cache = program.command("cache").description("Manage the local cache");
 cache.command("stats").description("Show cache statistics").action(cacheStatsCommand);
 
 cache.command("clear").description("Clear all cached data").action(cacheClearCommand);
+
+cache.command("prune").description("Remove expired cached data").action(cachePruneCommand);
 
 program.parse();

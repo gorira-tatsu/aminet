@@ -64,6 +64,7 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
     concurrency: options.concurrency,
     dev: options.dev,
     noCache: options.noCache,
+    security: options.security,
   };
 
   const baseResult = await buildReportFromPackageJson(

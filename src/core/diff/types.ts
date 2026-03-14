@@ -1,5 +1,6 @@
 import type { LicenseCategory } from "../graph/types.js";
 import type { ReportVulnerability } from "../report/types.js";
+import type { SecuritySignal } from "../security/types.js";
 
 export interface DependencyDiff {
   added: DiffEntry[];
@@ -8,6 +9,8 @@ export interface DependencyDiff {
   licenseChanged: LicenseChange[];
   newVulnerabilities: VulnChange[];
   resolvedVulnerabilities: VulnChange[];
+  newSecuritySignals: SecuritySignalChange[];
+  resolvedSecuritySignals: SecuritySignalChange[];
   summary: DiffSummary;
 }
 
@@ -36,6 +39,13 @@ export interface VulnChange {
   vulnerabilities: ReportVulnerability[];
 }
 
+export interface SecuritySignalChange {
+  packageId: string;
+  name: string;
+  version: string;
+  signals: SecuritySignal[];
+}
+
 export interface DiffSummary {
   addedCount: number;
   removedCount: number;
@@ -43,5 +53,7 @@ export interface DiffSummary {
   newVulnCount: number;
   resolvedVulnCount: number;
   licenseChangeCount: number;
+  newSecuritySignalCount: number;
+  resolvedSecuritySignalCount: number;
   riskLevel: "none" | "low" | "medium" | "high" | "critical";
 }

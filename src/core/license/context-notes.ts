@@ -1,3 +1,5 @@
+import { parseLicenseComponents } from "./spdx.js";
+
 export interface LicenseContextNote {
   license: string;
   note: string;
@@ -48,13 +50,7 @@ export function getContextNotes(licenses: string[]): LicenseContextNote[] {
   const notes: LicenseContextNote[] = [];
 
   for (const license of licenses) {
-    // Handle compound expressions
-    const ids =
-      license.includes(" OR ") || license.includes(" AND ")
-        ? license.split(/ (?:OR|AND) /).map((s) => s.trim())
-        : [license];
-
-    for (const id of ids) {
+    for (const { spdxId: id } of parseLicenseComponents(license)) {
       if (seen.has(id)) continue;
       seen.add(id);
       const note = getContextNote(id);

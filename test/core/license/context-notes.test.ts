@@ -47,6 +47,11 @@ describe("getContextNotes", () => {
     expect(notes[0].license).toBe("GPL-3.0");
   });
 
+  test("handles nested expressions", () => {
+    const notes = getContextNotes(["MIT OR (GPL-3.0 AND LGPL-2.1)"]);
+    expect(notes.map((note) => note.license)).toEqual(["GPL-3.0", "LGPL-2.1"]);
+  });
+
   test("returns empty for permissive-only", () => {
     const notes = getContextNotes(["MIT", "ISC", "Apache-2.0"]);
     expect(notes).toHaveLength(0);

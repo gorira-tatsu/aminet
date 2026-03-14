@@ -1,4 +1,5 @@
 import type { Report, ReportEntry } from "../report/types.js";
+import type { SecuritySignal } from "../security/types.js";
 import type { DependencyDiff, DiffEntry, DiffSummary, LicenseChange, VulnChange } from "./types.js";
 
 export function computeDiff(baseReport: Report, headReport: Report): DependencyDiff {
@@ -19,6 +20,14 @@ export function computeDiff(baseReport: Report, headReport: Report): DependencyD
   const licenseChanged: LicenseChange[] = [];
   const newVulnerabilities: VulnChange[] = [];
   const resolvedVulnerabilities: VulnChange[] = [];
+  const newSecuritySignals = computeSecuritySignalChanges(
+    baseReport.securitySignals ?? [],
+    headReport.securitySignals ?? [],
+  );
+  const resolvedSecuritySignals = computeSecuritySignalChanges(
+    headReport.securitySignals ?? [],
+    baseReport.securitySignals ?? [],
+  );
 
   // Find added and updated packages
   for (const [name, headEntry] of headByName) {
@@ -128,6 +137,8 @@ export function computeDiff(baseReport: Report, headReport: Report): DependencyD
     licenseChanged,
     newVulnerabilities,
     resolvedVulnerabilities,
+    newSecuritySignals,
+    resolvedSecuritySignals,
   );
 
   return {
@@ -137,6 +148,8 @@ export function computeDiff(baseReport: Report, headReport: Report): DependencyD
     licenseChanged,
     newVulnerabilities,
     resolvedVulnerabilities,
+    newSecuritySignals,
+    resolvedSecuritySignals,
     summary,
   };
 }
@@ -148,10 +161,17 @@ function computeSummary(
   licenseChanged: LicenseChange[],
   newVulnerabilities: VulnChange[],
   resolvedVulnerabilities: VulnChange[],
+  newSecuritySignals: DependencyDiff["newSecuritySignals"],
+  resolvedSecuritySignals: DependencyDiff["resolvedSecuritySignals"],
 ): DiffSummary {
   const newVulnCount = newVulnerabilities.reduce((sum, v) => sum + v.vulnerabilities.length, 0);
   const resolvedVulnCount = resolvedVulnerabilities.reduce(
     (sum, v) => sum + v.vulnerabilities.length,
+    0,
+  );
+  const newSecuritySignalCount = newSecuritySignals.reduce((sum, s) => sum + s.signals.length, 0);
+  const resolvedSecuritySignalCount = resolvedSecuritySignals.reduce(
+    (sum, s) => sum + s.signals.length,
     0,
   );
 
@@ -169,12 +189,18 @@ function computeSummary(
     (lc) => lc.newCategory === "copyleft" && lc.previousCategory !== "copyleft",
   );
   const hasNewCopyleft = added.some((a) => a.licenseCategory === "copyleft");
+  const hasCriticalSecuritySignal = newSecuritySignals.some((sc) =>
+    sc.signals.some((signal) => signal.severity === "critical"),
+  );
+  const hasHighSecuritySignal = newSecuritySignals.some((sc) =>
+    sc.signals.some((signal) => signal.severity === "high"),
+  );
 
-  if (hasCriticalVuln || hasCopyleftAdded || hasNewCopyleft) {
+  if (hasCriticalVuln || hasCriticalSecuritySignal || hasCopyleftAdded || hasNewCopyleft) {
     riskLevel = "critical";
-  } else if (hasHighVuln) {
+  } else if (hasHighVuln || hasHighSecuritySignal) {
     riskLevel = "high";
-  } else if (newVulnCount > 0 || licenseChanged.length > 0) {
+  } else if (newVulnCount > 0 || newSecuritySignalCount > 0 || licenseChanged.length > 0) {
     riskLevel = "medium";
   } else if (added.length > 0 || updated.length > 0) {
     riskLevel = "low";
@@ -187,6 +213,37 @@ function computeSummary(
     newVulnCount,
     resolvedVulnCount,
     licenseChangeCount: licenseChanged.length,
+    newSecuritySignalCount,
+    resolvedSecuritySignalCount,
     riskLevel,
   };
+}
+
+function computeSecuritySignalChanges(
+  baseSignals: SecuritySignal[],
+  headSignals: SecuritySignal[],
+): DependencyDiff["newSecuritySignals"] {
+  const baseKeys = new Set(baseSignals.map(securitySignalKey));
+  const addedSignals = headSignals.filter((signal) => !baseKeys.has(securitySignalKey(signal)));
+  const grouped = new Map<string, DependencyDiff["newSecuritySignals"][number]>();
+
+  for (const signal of addedSignals) {
+    const existing = grouped.get(signal.packageId);
+    if (existing) {
+      existing.signals.push(signal);
+      continue;
+    }
+    grouped.set(signal.packageId, {
+      packageId: signal.packageId,
+      name: signal.name,
+      version: signal.version,
+      signals: [signal],
+    });
+  }
+
+  return [...grouped.values()];
+}
+
+function securitySignalKey(signal: SecuritySignal): string {
+  return `${signal.packageId}:${signal.category}:${signal.severity}:${signal.title}`;
 }

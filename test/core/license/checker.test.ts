@@ -39,6 +39,11 @@ describe("classifyLicense", () => {
     expect(classifyLicense("MIT AND GPL-3.0")).toBe("copyleft");
     expect(classifyLicense("MIT AND MPL-2.0")).toBe("weak-copyleft");
   });
+
+  test("respects parentheses when classifying nested SPDX expressions", () => {
+    expect(classifyLicense("MIT OR (GPL-3.0 AND LGPL-2.1)")).toBe("permissive");
+    expect(classifyLicense("(MIT OR LGPL-2.1) AND GPL-3.0")).toBe("copyleft");
+  });
 });
 
 describe("extractLicense", () => {

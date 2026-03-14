@@ -17,5 +17,6 @@ export interface NpmVersionInfo {
   dist?: {
     tarball: string;
     integrity?: string;
+    attestations?: unknown;
   };
 }

@@ -1,16 +1,27 @@
 import { logger } from "./logger.js";
+import { circuitBreaker } from "./rate-limiter.js";
 
 export interface FetchOptions {
   maxRetries?: number;
+  maxRateLimitRetries?: number;
   baseDelay?: number;
   timeout?: number;
 }
 
 const DEFAULT_OPTIONS: Required<FetchOptions> = {
   maxRetries: 3,
+  maxRateLimitRetries: 2,
   baseDelay: 1000,
   timeout: 30000,
 };
+
+function extractHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
 
 export async function fetchWithRetry(
   url: string,
@@ -18,12 +29,21 @@ export async function fetchWithRetry(
   options?: FetchOptions,
 ): Promise<Response> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
+  const host = extractHost(url);
+
+  // Circuit breaker: if the host is failing repeatedly, skip immediately
+  if (circuitBreaker.isOpen(host)) {
+    logger.debug(`Circuit breaker open for ${host}, skipping request`);
+    return new Response(null, { status: 503, statusText: "Circuit Breaker Open" });
+  }
+
+  let rateLimitRetries = 0;
 
   for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), opts.timeout);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), opts.timeout);
 
+    try {
       const response = await fetch(url, {
         ...init,
         signal: controller.signal,
@@ -32,27 +52,47 @@ export async function fetchWithRetry(
       clearTimeout(timeoutId);
 
       if (response.status === 429) {
+        circuitBreaker.recordFailure(host);
+        rateLimitRetries++;
+
+        if (rateLimitRetries > opts.maxRateLimitRetries) {
+          logger.debug(`Rate limit retries exhausted for ${host}, returning 429`);
+          return response;
+        }
+
+        if (circuitBreaker.isOpen(host)) {
+          logger.debug(`Circuit breaker tripped for ${host}, returning 429`);
+          return response;
+        }
+
         const retryAfter = response.headers.get("Retry-After");
-        const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : opts.baseDelay * 2 ** attempt;
-        logger.warn(`Rate limited, retrying after ${delay}ms...`);
+        // Enforce minimum 1 second delay to avoid tight retry loops when Retry-After: 0
+        const delay = retryAfter
+          ? Math.max(1000, Number.parseInt(retryAfter, 10) * 1000)
+          : opts.baseDelay * 2 ** attempt;
+        logger.debug(`Rate limited by ${host}, retrying after ${delay}ms...`);
         await sleep(delay);
         continue;
       }
 
       if (response.status >= 500 && attempt < opts.maxRetries) {
         const delay = opts.baseDelay * 2 ** attempt;
-        logger.warn(`Server error ${response.status}, retrying after ${delay}ms...`);
+        logger.debug(`Server error ${response.status} from ${host}, retrying after ${delay}ms...`);
         await sleep(delay);
         continue;
       }
 
+      // Success — reset circuit breaker for this host
+      circuitBreaker.recordSuccess(host);
       return response;
     } catch (error) {
+      clearTimeout(timeoutId);
       if (attempt === opts.maxRetries) {
         throw error;
       }
       const delay = opts.baseDelay * 2 ** attempt;
-      logger.warn(`Request failed, retrying after ${delay}ms...`, error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.debug(`Request to ${host} failed (${errorMsg}), retrying after ${delay}ms...`);
       await sleep(delay);
     }
   }

@@ -1,6 +1,7 @@
 import { logger } from "../../utils/logger.js";
 import type { DependencyGraph } from "../graph/types.js";
 import { getPackument } from "../registry/npm-client.js";
+import type { NpmPackument } from "../registry/types.js";
 import { cacheSecuritySignals, getCachedSecuritySignals } from "../store/security-store.js";
 import { detectDeprecated } from "./deprecated.js";
 import { detectInstallScripts } from "./install-scripts.js";
@@ -9,7 +10,10 @@ import { detectPublishAnomalies } from "./publish-anomaly.js";
 import type { SecurityScanResult, SecuritySignal } from "./types.js";
 import { detectTyposquatting } from "./typosquatting.js";
 
-export async function scanSecuritySignals(graph: DependencyGraph): Promise<SecurityScanResult> {
+export async function scanSecuritySignals(
+  graph: DependencyGraph,
+  packuments?: Map<string, NpmPackument>,
+): Promise<SecurityScanResult> {
   const allSignals: SecuritySignal[] = [];
 
   for (const node of graph.nodes.values()) {
@@ -25,7 +29,7 @@ export async function scanSecuritySignals(graph: DependencyGraph): Promise<Secur
     const signals: SecuritySignal[] = [];
 
     try {
-      const packument = await getPackument(node.name);
+      const packument = packuments?.get(node.name) ?? (await getPackument(node.name));
       const versionInfo = packument.versions?.[node.version];
 
       if (versionInfo) {

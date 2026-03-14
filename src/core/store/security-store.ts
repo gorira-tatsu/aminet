@@ -1,5 +1,6 @@
 import { logger } from "../../utils/logger.js";
 import type { SecuritySignal } from "../security/types.js";
+import { TTL } from "./config.js";
 import { getDatabase } from "./database.js";
 
 interface SecuritySignalRow {
@@ -13,9 +14,6 @@ interface SecuritySignalRow {
   details: string | null;
   scanned_at: number;
 }
-
-/** Cache TTL for security signals: 24 hours */
-const SIGNAL_TTL = 24 * 60 * 60 * 1000;
 
 export function getCachedSecuritySignals(
   name: string,
@@ -31,7 +29,7 @@ export function getCachedSecuritySignals(
          WHERE ecosystem = ? AND name = ? AND version = ?
          AND scanned_at > ?`,
       )
-      .all(ecosystem, name, version, Date.now() - SIGNAL_TTL);
+      .all(ecosystem, name, version, Date.now() - TTL.securitySignals);
 
     if (rows.length === 0) return null;
 
