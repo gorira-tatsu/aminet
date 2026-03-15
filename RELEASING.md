@@ -13,8 +13,16 @@
    - install examples
    - action usage example
 
+## Manual publish fallback
+
+- The `Publish aminet` workflow can also be started with `workflow_dispatch`.
+- Set `ref` to the branch or tag you want to publish from.
+- Set `tag_name` only when you also want a GitHub Release. `tag_name` must match `package.json`.
+- Manual branch publishes skip GitHub Release creation unless `tag_name` is provided.
+
 ## Notes
 
 - npmjs.org is the canonical registry
 - Publishing uses npm trusted publishing with GitHub OIDC
+- npm trusted publisher configuration in npm package settings must allow this repository workflow
 - The release workflow expects the git tag version to exactly match `package.json`
