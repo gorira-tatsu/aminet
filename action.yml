@@ -20,7 +20,7 @@ inputs:
     description: "Enable security deep analysis"
     default: "true"
   version:
-    description: "aminet package version to execute (defaults to this action's version)"
+    description: "Published aminet version to execute. If omitted, release-tag usage resolves from GITHUB_ACTION_REF; repo-local usage falls back to dist/index.js when available."
     required: false
 
 runs:
@@ -35,11 +35,13 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
+        GITHUB_ACTION_REF: ${{ github.action_ref }}
       run: |
         VERSION="${{ inputs.version }}"
-        if [ -z "$VERSION" ]; then
-          VERSION=$(node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=JSON.parse(fs.readFileSync(path.join('${{ github.action_path }}','package.json'),'utf8')); process.stdout.write(pkg.version)")
-        fi
+        ACTION_PATH="$GITHUB_ACTION_PATH"
+        ACTION_REF="$GITHUB_ACTION_REF"
+        LOCAL_ENTRY="$ACTION_PATH/dist/index.js"
 
         ARGS="${{ inputs.path }} --base ${{ github.event.pull_request.base.sha }}"
         ARGS="$ARGS --pr-number ${{ github.event.pull_request.number }}"
@@ -59,4 +61,20 @@ runs:
           ARGS="$ARGS --security"
         fi
 
-        npx --yes aminet@"$VERSION" review $ARGS
+        if [ -n "$VERSION" ]; then
+          npx --yes aminet@"$VERSION" review $ARGS
+          exit 0
+        fi
+
+        if [ -n "$ACTION_REF" ] && [[ "$ACTION_REF" == v* ]]; then
+          npx --yes aminet@"${ACTION_REF#v}" review $ARGS
+          exit 0
+        fi
+
+        if [ -f "$LOCAL_ENTRY" ]; then
+          node "$LOCAL_ENTRY" review $ARGS
+          exit 0
+        fi
+
+        echo "Unable to determine which aminet version to run. Pass the 'version' input or use a released action tag." >&2
+        exit 1

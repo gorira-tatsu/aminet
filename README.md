@@ -12,7 +12,7 @@ It analyzes dependency graphs, vulnerabilities, licenses, security signals, trus
 ## Status
 
 - Early project, pre-`1.0`
-- License is not finalized yet
+- License: MIT
 - CLI and review output may still evolve
 
 ## What `aminet` does
@@ -151,10 +151,17 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: pnpm/action-setup@v4
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - uses: ./
         with:
           path: package.json
