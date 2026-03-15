@@ -148,6 +148,17 @@ jobs:
 
 For remote usage after tagged releases are published, replace `uses: ./` with `uses: gorira-tatsu/aminet@v0.1.1`.
 
+## Releasing
+
+The intended release flow is tag-driven with npm trusted publishing.
+
+1. Update `package.json` to the release version
+2. Commit and push `main`
+3. Create and push a `v<version>` tag
+4. GitHub Actions publishes the matching npm package and creates a GitHub Release
+
+One-time prerequisite: configure npm trusted publishing for `gorira-tatsu/aminet` and the publish workflow in npm package settings.
+
 ## Output modes
 
 `analyze` can render:
