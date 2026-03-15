@@ -51,7 +51,49 @@ jobs:
       - name: Publish to npm
         run: npm publish --provenance
 
+      - name: Build release notes body
+        id: release_notes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = process.env.GITHUB_REF_NAME.replace(/^v/, "");
+            const generated = await github.rest.repos.generateReleaseNotes({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref.replace("refs/tags/", ""),
+              target_commitish: context.sha,
+            });
+
+            const npmUrl = "https://www.npmjs.com/package/aminet";
+            const body = [
+              `## aminet ${version}`,
+              "",
+              `npm: ${npmUrl}`,
+              "",
+              "### Install",
+              "",
+              "```bash",
+              `npx aminet@${version} --help`,
+              "npm install -g aminet",
+              "```",
+              "",
+              "### GitHub Action",
+              "",
+              "```yaml",
+              `uses: gorira-tatsu/aminet@v${version}`,
+              "```",
+              "",
+              "npmjs.org is the canonical package registry for aminet.",
+              "",
+              "---",
+              "",
+              generated.data.body,
+              "",
+            ].join("\n");
+            const fs = require("node:fs");
+            fs.writeFileSync("release-notes.md", body);
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          body_path: release-notes.md

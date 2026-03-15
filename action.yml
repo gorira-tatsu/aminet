@@ -1,5 +1,8 @@
 name: "aminet Supply Chain Review"
 description: "Analyze dependency changes in pull requests for security, license, and vulnerability issues"
+branding:
+  icon: shield
+  color: red
 inputs:
   path:
     description: "Path to package.json"
@@ -16,6 +19,9 @@ inputs:
   security:
     description: "Enable security deep analysis"
     default: "true"
+  version:
+    description: "aminet package version to execute (defaults to this action's version)"
+    required: false
 
 runs:
   using: "composite"
@@ -30,6 +36,11 @@ runs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
       run: |
+        VERSION="${{ inputs.version }}"
+        if [ -z "$VERSION" ]; then
+          VERSION=$(node -e "const fs=require('node:fs'); const path=require('node:path'); const pkg=JSON.parse(fs.readFileSync(path.join('${{ github.action_path }}','package.json'),'utf8')); process.stdout.write(pkg.version)")
+        fi
+
         ARGS="${{ inputs.path }} --base ${{ github.event.pull_request.base.sha }}"
         ARGS="$ARGS --pr-number ${{ github.event.pull_request.number }}"
         ARGS="$ARGS --repo ${{ github.repository }}"
@@ -48,4 +59,4 @@ runs:
           ARGS="$ARGS --security"
         fi
 
-        npx --yes aminet@0.1.1 review $ARGS
+        npx --yes aminet@"$VERSION" review $ARGS
