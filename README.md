@@ -177,6 +177,8 @@ The intended release flow is tag-driven with npm trusted publishing.
 3. Create and push a `v<version>` tag
 4. GitHub Actions publishes the matching npm package and creates a GitHub Release
 
+You can also run the publish workflow manually with `workflow_dispatch` against a branch or tag. When you provide `tag_name`, it must still match `package.json`.
+
 One-time prerequisite: configure npm trusted publishing for `gorira-tatsu/aminet` and the publish workflow in npm package settings.
 
 ## Distribution
