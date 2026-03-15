@@ -102,7 +102,7 @@ export function buildCycloneDxBom(report: Report, graph: DependencyGraph): Cyclo
     serialNumber: `urn:uuid:${randomUUID()}`,
     metadata: {
       timestamp: new Date().toISOString(),
-      tools: [{ vendor: "aminet", name: "aminet", version: "0.1.0" }],
+      tools: [{ vendor: "aminet", name: "aminet", version: "0.1.1" }],
     },
     components,
     dependencies,

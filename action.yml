@@ -25,15 +25,6 @@ runs:
       with:
         node-version: "20"
 
-    - name: Setup pnpm
-      uses: pnpm/action-setup@v4
-      with:
-        version: 10
-
-    - name: Install dependencies
-      shell: bash
-      run: pnpm install --frozen-lockfile
-
     - name: Run aminet review
       shell: bash
       env:
@@ -57,4 +48,4 @@ runs:
           ARGS="$ARGS --security"
         fi
 
-        node dist/index.js review $ARGS
+        npx --yes aminet@0.1.1 review $ARGS

@@ -1,5 +1,11 @@
 export { TTL } from "./config.js";
-export { closeDatabase, getDatabase, setDatabase } from "./database.js";
+export {
+  closeDatabase,
+  getDatabase,
+  getPersistentCacheFailureReason,
+  isPersistentCacheAvailable,
+  setDatabase,
+} from "./database.js";
 export { packageHash, packumentHash } from "./hash.js";
 export {
   cacheLicenseIntelligence,
@@ -31,7 +37,11 @@ export {
 } from "./vulnerability-store.js";
 
 import { TTL } from "./config.js";
-import { getDatabase } from "./database.js";
+import {
+  getDatabase,
+  getPersistentCacheFailureReason,
+  isPersistentCacheAvailable,
+} from "./database.js";
 
 export interface StoreStats {
   packuments: number;
@@ -55,7 +65,7 @@ export interface StoreStats {
 }
 
 export function getStoreStats(): StoreStats {
-  const db = getDatabase();
+  const db = requirePersistentCache();
 
   const packuments = (
     db.query("SELECT COUNT(*) as count FROM packuments").get() as { count: number }
@@ -158,7 +168,7 @@ export function getStoreStats(): StoreStats {
 }
 
 export function clearAllStores(): void {
-  const db = getDatabase();
+  const db = requirePersistentCache();
   db.exec("DELETE FROM packuments");
   db.exec("DELETE FROM packages");
   db.exec("DELETE FROM vulnerabilities");
@@ -183,7 +193,7 @@ export interface PruneResult {
 }
 
 export function pruneExpiredStores(now = Date.now()): PruneResult {
-  const db = getDatabase();
+  const db = requirePersistentCache();
   const statements = [
     {
       key: "packuments",
@@ -250,4 +260,14 @@ export function pruneExpiredStores(now = Date.now()): PruneResult {
 
   prune();
   return result;
+}
+
+function requirePersistentCache() {
+  const db = getDatabase();
+  if (!isPersistentCacheAvailable()) {
+    throw new Error(
+      getPersistentCacheFailureReason() ?? "Persistent cache is unavailable in this environment.",
+    );
+  }
+  return db;
 }

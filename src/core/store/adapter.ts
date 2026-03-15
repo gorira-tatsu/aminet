@@ -1,4 +1,7 @@
-import BetterSqlite3 from "better-sqlite3";
+import { createRequire } from "node:module";
+import type BetterSqlite3 from "better-sqlite3";
+
+const require = createRequire(import.meta.url);
 
 export interface QueryHandle<T, P extends unknown[]> {
   get(...params: P): T | null;
@@ -42,7 +45,8 @@ class NodeSqliteDatabase implements DatabaseLike {
   private readonly db: BetterSqlite3.Database;
 
   constructor(path: string) {
-    this.db = new BetterSqlite3(path);
+    const BetterSqlite3Module = require("better-sqlite3") as typeof import("better-sqlite3");
+    this.db = new BetterSqlite3Module(path);
   }
 
   exec(sql: string): void {

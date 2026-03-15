@@ -1,7 +1,15 @@
 import chalk from "chalk";
-import { clearAllStores, getStoreStats, pruneExpiredStores } from "../../core/store/index.js";
+import { getDatabase } from "../../core/store/database.js";
+import {
+  clearAllStores,
+  getPersistentCacheFailureReason,
+  getStoreStats,
+  isPersistentCacheAvailable,
+  pruneExpiredStores,
+} from "../../core/store/index.js";
 
 export async function cacheStatsCommand(): Promise<void> {
+  if (!ensurePersistentCache()) return;
   const stats = getStoreStats();
 
   console.log(chalk.bold("Cache Statistics:"));
@@ -28,11 +36,13 @@ export async function cacheStatsCommand(): Promise<void> {
 }
 
 export async function cacheClearCommand(): Promise<void> {
+  if (!ensurePersistentCache()) return;
   clearAllStores();
   console.log(chalk.green("Cache cleared."));
 }
 
 export async function cachePruneCommand(): Promise<void> {
+  if (!ensurePersistentCache()) return;
   const result = pruneExpiredStores();
   console.log(
     chalk.green(
@@ -55,4 +65,17 @@ function formatBytes(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   const size = bytes / 1024 ** i;
   return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function ensurePersistentCache(): boolean {
+  getDatabase();
+
+  if (isPersistentCacheAvailable()) {
+    return true;
+  }
+
+  const reason = getPersistentCacheFailureReason() ?? "unknown error";
+  console.error(chalk.yellow(`Persistent cache unavailable: ${reason}`));
+  process.exitCode = 1;
+  return false;
 }

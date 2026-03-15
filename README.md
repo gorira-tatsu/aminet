@@ -49,26 +49,26 @@ node dist/index.js --help
 Analyze a published package:
 
 ```bash
-pnpm dlx aminet analyze express@4.21.2 --security --trust-score --freshness
+npx aminet analyze express@4.21.2 --security --trust-score --freshness
 ```
 
 Analyze a local project:
 
 ```bash
-pnpm dlx aminet analyze package.json --security --enhanced-license --json
+npx aminet analyze package.json --security --enhanced-license --json
 ```
 
 Review dependency changes in a branch:
 
 ```bash
-pnpm dlx aminet review package.json --base HEAD~1 --security
+npx aminet review package.json --base HEAD~1 --security
 ```
 
 Cache maintenance:
 
 ```bash
-pnpm dlx aminet cache stats
-pnpm dlx aminet cache prune
+npx aminet cache stats
+npx aminet cache prune
 ```
 
 ## Example outputs
@@ -76,10 +76,10 @@ pnpm dlx aminet cache prune
 Representative analyze modes:
 
 ```bash
-pnpm dlx aminet analyze express@4.21.2 --json
-pnpm dlx aminet analyze express@4.21.2 --cyclonedx
-pnpm dlx aminet analyze express@4.21.2 --spdx
-pnpm dlx aminet analyze express@4.21.2 --notices
+npx aminet analyze express@4.21.2 --json
+npx aminet analyze express@4.21.2 --cyclonedx
+npx aminet analyze express@4.21.2 --spdx
+npx aminet analyze express@4.21.2 --notices
 ```
 
 Representative review mode:
@@ -146,7 +146,7 @@ jobs:
           security: "true"
 ```
 
-For remote usage after tagged releases are published, replace `uses: ./` with `uses: gorira-tatsu/aminet@tag`.
+For remote usage after tagged releases are published, replace `uses: ./` with `uses: gorira-tatsu/aminet@v0.1.1`.
 
 ## Output modes
 
@@ -175,7 +175,8 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for contributor workflow details.
 
 The published package exposes an `aminet` executable through `dist/index.js` with a Node shebang.
 
-- `pnpm dlx aminet ...` is the intended zero-install UX
+- `npx aminet ...` is the recommended zero-install UX
+- `pnpm dlx aminet ...` works, but may run with cache disabled when native SQLite bindings are unavailable
 - `pnpm add -g aminet` exposes `aminet ...` globally
 - repository-local development can use `node dist/index.js ...` after `pnpm build`
 

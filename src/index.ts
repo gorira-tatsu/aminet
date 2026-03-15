@@ -9,7 +9,7 @@ const program = new Command();
 program
   .name("aminet")
   .description("Software supply chain security tool for npm packages")
-  .version("0.1.0");
+  .version("0.1.1");
 
 // analyze command
 program
