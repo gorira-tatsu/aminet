@@ -251,6 +251,7 @@ function computeSummary(
     addedCount: added.length,
     removedCount: removed.length,
     updatedCount: updated.length,
+    skippedCount: 0,
     newVulnCount,
     resolvedVulnCount,
     licenseChangeCount: licenseChanged.length,

@@ -63,6 +63,8 @@ Common inputs:
 - `fail-on-vuln`: fail the job at or above a severity threshold
 - `security`: enable deeper security checks
 - `version`: pin the published `aminet` CLI version explicitly
+- `exclude-packages`: comma-separated packages to skip (supports wildcards like `@scope/*`)
+- `npm-token`: npm auth token for private registry access
 
 For repository-local usage during development:
 
@@ -95,6 +97,16 @@ If you want explicit version pinning instead of relying on the action tag:
           path: package.json
           fail-on-vuln: high
           deny-license: GPL-3.0,AGPL-3.0
+```
+
+If your project has private packages, provide an npm token and optionally exclude packages that should not be analyzed:
+
+```yaml
+      - uses: gorira-tatsu/aminet@v0.1.3
+        with:
+          path: package.json
+          npm-token: ${{ secrets.NPM_TOKEN }}
+          exclude-packages: "@my-org/internal-*"
 ```
 
 ## CLI
@@ -131,6 +143,13 @@ Review dependency changes in a branch:
 npx aminet review package.json --base HEAD~1 --security
 ```
 
+Review with private packages (skip or authenticate):
+
+```bash
+npx aminet review package.json --base HEAD~1 --exclude-packages "@scope/*"
+NPM_TOKEN=xxx npx aminet review package.json --base HEAD~1
+```
+
 Cache maintenance:
 
 ```bash
@@ -153,6 +172,25 @@ Use the built-in help for the complete option set:
 npx aminet analyze --help
 npx aminet review --help
 ```
+
+## Configuration
+
+Place an `aminet.config.json` in your project root to set defaults:
+
+```json
+{
+  "excludePackages": ["@my-org/*", "@internal/legacy-lib"],
+  "npmToken": "npm_...",
+  "denyLicenses": ["GPL-3.0", "AGPL-3.0"],
+  "allowLicenses": ["MIT", "ISC", "Apache-2.0"],
+  "depth": 5,
+  "concurrency": 5,
+  "security": true,
+  "deepLicenseCheck": false
+}
+```
+
+All fields are optional. CLI flags and Action inputs override config file values. For `npmToken`, the resolution order is: CLI `--npm-token` > `NPM_TOKEN` environment variable > config file.
 
 ## What `aminet` does
 

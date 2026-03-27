@@ -8,4 +8,6 @@ export interface AmiConfig {
   concurrency?: number;
   deepLicenseCheck?: boolean;
   security?: boolean;
+  excludePackages?: string[]; // exact names or wildcards (e.g., "@scope/*")
+  npmToken?: string;
 }

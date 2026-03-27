@@ -9,9 +9,14 @@ const NPM_REGISTRY = "https://registry.npmjs.org";
 const memoryCache = new Map<string, NpmPackument>();
 
 let useCache = true;
+let npmToken: string | undefined;
 
 export function setNpmCacheEnabled(enabled: boolean): void {
   useCache = enabled;
+}
+
+export function setNpmToken(token: string | undefined): void {
+  npmToken = token;
 }
 
 export async function getPackument(name: string): Promise<NpmPackument> {
@@ -35,9 +40,21 @@ export async function getPackument(name: string): Promise<NpmPackument> {
   const url = `${NPM_REGISTRY}/${encodedName}`;
   logger.debug(`Fetching packument: ${name}`);
 
-  const response = await fetchWithRetry(url, {
-    headers: { Accept: "application/json" },
-  });
+  const token = npmToken ?? process.env.NPM_TOKEN;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetchWithRetry(url, { headers });
+
+  if (response.status === 401) {
+    throw new Error(`Unauthorized: ${name} — check your npm token`);
+  }
+
+  if (response.status === 403) {
+    throw new Error(`Forbidden: no access to ${name} — check your npm token permissions`);
+  }
 
   if (response.status === 404) {
     throw new Error(`Package not found: ${name}`);

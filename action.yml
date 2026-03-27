@@ -19,6 +19,12 @@ inputs:
   security:
     description: "Enable security deep analysis"
     default: "true"
+  exclude-packages:
+    description: "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)"
+    required: false
+  npm-token:
+    description: "npm auth token for private registries"
+    required: false
   version:
     description: "Published aminet version to execute. If omitted, release-tag usage resolves from GITHUB_ACTION_REF; repo-local usage falls back to dist/index.js when available."
     required: false
@@ -37,6 +43,7 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
         GITHUB_ACTION_PATH: ${{ github.action_path }}
         GITHUB_ACTION_REF: ${{ github.action_ref }}
+        NPM_TOKEN: ${{ inputs.npm-token }}
       run: |
         VERSION="${{ inputs.version }}"
         ACTION_PATH="$GITHUB_ACTION_PATH"
@@ -59,6 +66,9 @@ runs:
         fi
         if [ "${{ inputs.security }}" = "true" ]; then
           ARGS="$ARGS --security"
+        fi
+        if [ -n "${{ inputs.exclude-packages }}" ]; then
+          ARGS="$ARGS --exclude-packages '${{ inputs.exclude-packages }}'"
         fi
 
         if [ -n "$VERSION" ]; then

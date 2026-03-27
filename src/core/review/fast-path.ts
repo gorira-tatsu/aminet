@@ -113,9 +113,20 @@ export function buildReviewDiff(
   const newSecuritySignals: SecuritySignalChange[] = [];
   const resolvedSecuritySignals: SecuritySignalChange[] = [];
 
+  let skippedCount = 0;
+
   for (const change of changes) {
     const base = baseAnalyses.get(change.name);
     const head = headAnalyses.get(change.name);
+
+    // Count packages that were detected as changed but couldn't be analyzed
+    if (
+      (change.changeType === "added" && !head) ||
+      (change.changeType === "removed" && !base) ||
+      (change.changeType === "updated" && (!base || !head))
+    ) {
+      skippedCount++;
+    }
 
     if (change.changeType === "added" && head) {
       added.push(toDiffEntry(head, change));
@@ -250,6 +261,7 @@ export function buildReviewDiff(
     added,
     removed,
     updated,
+    skippedCount,
     licenseChanged,
     newVulnerabilities,
     resolvedVulnerabilities,
@@ -340,6 +352,7 @@ function computeSummary(
   added: DiffEntry[],
   removed: DiffEntry[],
   updated: DiffEntry[],
+  skippedCount: number,
   licenseChanged: DependencyDiff["licenseChanged"],
   newVulnerabilities: DependencyDiff["newVulnerabilities"],
   resolvedVulnerabilities: DependencyDiff["resolvedVulnerabilities"],
@@ -399,6 +412,7 @@ function computeSummary(
     addedCount: added.length,
     removedCount: removed.length,
     updatedCount: updated.length,
+    skippedCount,
     newVulnCount,
     resolvedVulnCount,
     licenseChangeCount: licenseChanged.length,

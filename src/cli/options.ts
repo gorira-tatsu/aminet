@@ -33,6 +33,9 @@ export interface AnalyzeOptions {
   phantom?: boolean; // detect phantom dependencies
   provenance?: boolean; // check npm provenance attestations
   pinning?: boolean; // analyze version pinning strategy
+  // Private package support
+  excludePackages?: string; // comma-separated package names or wildcards
+  npmToken?: string;
 }
 
 export interface ReviewOptions extends AnalyzeOptions {

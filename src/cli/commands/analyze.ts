@@ -16,7 +16,8 @@ import type { PhantomDependency } from "../../core/phantom/scanner.js";
 import { scanPhantomDependencies } from "../../core/phantom/scanner.js";
 import type { PinningReport } from "../../core/pinning/analyzer.js";
 import { analyzeVersionPinning } from "../../core/pinning/analyzer.js";
-import { setNpmCacheEnabled } from "../../core/registry/npm-client.js";
+import { setNpmCacheEnabled, setNpmToken } from "../../core/registry/npm-client.js";
+import { parseExcludePackages } from "../../utils/exclude.js";
 import { buildReport } from "../../core/report/builder.js";
 import type { Report } from "../../core/report/types.js";
 import { getDatabase } from "../../core/store/database.js";
@@ -63,6 +64,12 @@ export async function analyzeCommand(target: string, options: AnalyzeOptions): P
 
   if (options.noCache) {
     setNpmCacheEnabled(false);
+  }
+
+  // Set npm token: CLI option > env var > config
+  const resolvedNpmToken = options.npmToken ?? process.env.NPM_TOKEN ?? config.npmToken;
+  if (resolvedNpmToken) {
+    setNpmToken(resolvedNpmToken);
   }
 
   const isCi = options.ci || false;
@@ -195,11 +202,13 @@ async function analyzeFile(
   }
 
   // Use buildReportFromPackageJson for file analysis
+  const excludePackages = parseExcludePackages(options.excludePackages, config.excludePackages);
   const result = await buildReportFromPackageJson(pkg, {
     depth: options.depth,
     concurrency: options.concurrency,
     dev: options.dev,
     noCache: options.noCache,
+    excludePackages,
   });
 
   if (spinner) {

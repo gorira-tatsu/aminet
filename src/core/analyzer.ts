@@ -1,3 +1,4 @@
+import { isExcludedPackage } from "../utils/exclude.js";
 import { logger } from "../utils/logger.js";
 import { runAnalysisPhases } from "./analysis/phases.js";
 import { resolveDependencyGraph } from "./graph/resolver.js";
@@ -20,6 +21,7 @@ export interface AnalyzerOptions {
   provenance?: boolean;
   minTrustScore?: number;
   deepLicenseCheck?: boolean;
+  excludePackages?: string[];
 }
 
 export interface AnalysisResult {
@@ -68,7 +70,11 @@ export async function buildReportFromPackageJson(
     ...(options.dev ? (pkg.devDependencies ?? {}) : {}),
   };
 
-  const depEntries = Object.entries(allDeps);
+  const excludeList = options.excludePackages ?? [];
+  const depEntries = Object.entries(allDeps).filter(([name]) => {
+    if (excludeList.length === 0) return true;
+    return !isExcludedPackage(name, excludeList);
+  });
   const rootId = pkg.name ? `${pkg.name}@${pkg.version ?? "0.0.0"}` : "root@0.0.0";
 
   // Create virtual root node

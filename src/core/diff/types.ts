@@ -65,6 +65,7 @@ export interface DiffSummary {
   addedCount: number;
   removedCount: number;
   updatedCount: number;
+  skippedCount: number;
   newVulnCount: number;
   resolvedVulnCount: number;
   licenseChangeCount: number;

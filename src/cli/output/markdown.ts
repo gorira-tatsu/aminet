@@ -27,6 +27,9 @@ export function renderMarkdownComment(diff: DependencyDiff): string {
   lines.push(`| New Security Signals | ${diff.summary.newSecuritySignalCount} |`);
   lines.push(`| Resolved Security Signals | ${diff.summary.resolvedSecuritySignalCount} |`);
   lines.push(`| License Changes | ${diff.summary.licenseChangeCount} |`);
+  if (diff.summary.skippedCount > 0) {
+    lines.push(`| Skipped (unavailable) | ${diff.summary.skippedCount} |`);
+  }
   lines.push("");
 
   const icon = RISK_ICONS[diff.summary.riskLevel] ?? ":white_circle:";

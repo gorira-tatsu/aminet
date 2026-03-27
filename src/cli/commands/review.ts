@@ -3,9 +3,10 @@ import { dirname, join } from "node:path";
 import chalk from "chalk";
 import ora from "ora";
 import { buildReportForPackageSpec } from "../../core/analyzer.js";
+import { loadConfig } from "../../core/config/loader.js";
 import type { DependencyDiff } from "../../core/diff/types.js";
 import { parseLockfile } from "../../core/lockfile/parser.js";
-import { setNpmCacheEnabled } from "../../core/registry/npm-client.js";
+import { setNpmCacheEnabled, setNpmToken } from "../../core/registry/npm-client.js";
 import {
   buildReviewDiff,
   collectDirectDependencies,
@@ -15,6 +16,7 @@ import {
 } from "../../core/review/fast-path.js";
 import { getDatabase } from "../../core/store/database.js";
 import { mapConcurrent } from "../../utils/concurrency.js";
+import { isExcludedPackage, parseExcludePackages } from "../../utils/exclude.js";
 import { fetchWithRetry } from "../../utils/http.js";
 import { logger, setLogLevel } from "../../utils/logger.js";
 import { runCommand } from "../../utils/process.js";
@@ -38,6 +40,15 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
 
   if (options.noCache) {
     setNpmCacheEnabled(false);
+  }
+
+  // Load config early for token + exclude resolution
+  const config = loadConfig(dirname(target));
+
+  // Set npm token: CLI option > env var > config
+  const resolvedNpmToken = options.npmToken ?? process.env.NPM_TOKEN ?? config.npmToken;
+  if (resolvedNpmToken) {
+    setNpmToken(resolvedNpmToken);
   }
 
   const baseRef = options.base ?? "HEAD~1";
@@ -89,7 +100,13 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
   );
   const baseResolved = resolveDirectDependencyVersions(baseDeps, baseLockfile);
   const headResolved = resolveDirectDependencyVersions(headDeps, headLockfile);
-  const changes = diffDirectDependencies(baseDeps, headDeps, baseResolved, headResolved);
+  const allChanges = diffDirectDependencies(baseDeps, headDeps, baseResolved, headResolved);
+
+  // Apply exclude-packages filter (CLI option + config)
+  const excludePatterns = parseExcludePackages(options.excludePackages, config.excludePackages);
+  const changes = excludePatterns.length > 0
+    ? allChanges.filter((c) => !isExcludedPackage(c.name, excludePatterns))
+    : allChanges;
 
   let diff: DependencyDiff;
   if (changes.length === 0) {
@@ -103,42 +120,47 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
     const analysisCache = new Map<string, Awaited<ReturnType<typeof buildReportForPackageSpec>>>();
 
     await mapConcurrent(changes, options.concurrency ?? 5, async (change) => {
-      if (change.changeType === "removed" || change.changeType === "updated") {
-        const spec = change.baseResolved ?? change.baseDeclared;
-        if (spec) {
-          const result = await analyzePackageWithCache(
-            change.name,
-            spec,
-            analyzerOptions,
-            analysisCache,
-          );
-          baseAnalyses.set(change.name, {
-            name: change.name,
-            declaredVersion: change.baseDeclared ?? null,
-            resolvedVersion:
-              (result.report.root.split("@").slice(1).join("@") || change.baseResolved) ?? null,
-            report: result.report,
-          });
+      try {
+        if (change.changeType === "removed" || change.changeType === "updated") {
+          const spec = change.baseResolved ?? change.baseDeclared;
+          if (spec) {
+            const result = await analyzePackageWithCache(
+              change.name,
+              spec,
+              analyzerOptions,
+              analysisCache,
+            );
+            baseAnalyses.set(change.name, {
+              name: change.name,
+              declaredVersion: change.baseDeclared ?? null,
+              resolvedVersion:
+                (result.report.root.split("@").slice(1).join("@") || change.baseResolved) ?? null,
+              report: result.report,
+            });
+          }
         }
-      }
 
-      if (change.changeType === "added" || change.changeType === "updated") {
-        const spec = change.headResolved ?? change.headDeclared;
-        if (spec) {
-          const result = await analyzePackageWithCache(
-            change.name,
-            spec,
-            analyzerOptions,
-            analysisCache,
-          );
-          headAnalyses.set(change.name, {
-            name: change.name,
-            declaredVersion: change.headDeclared ?? null,
-            resolvedVersion:
-              (result.report.root.split("@").slice(1).join("@") || change.headResolved) ?? null,
-            report: result.report,
-          });
+        if (change.changeType === "added" || change.changeType === "updated") {
+          const spec = change.headResolved ?? change.headDeclared;
+          if (spec) {
+            const result = await analyzePackageWithCache(
+              change.name,
+              spec,
+              analyzerOptions,
+              analysisCache,
+            );
+            headAnalyses.set(change.name, {
+              name: change.name,
+              declaredVersion: change.headDeclared ?? null,
+              resolvedVersion:
+                (result.report.root.split("@").slice(1).join("@") || change.headResolved) ?? null,
+              report: result.report,
+            });
+          }
         }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        logger.warn(`Skipping ${change.name}: ${msg}`);
       }
     });
 
