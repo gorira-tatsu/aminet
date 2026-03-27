@@ -41,8 +41,14 @@ export async function tryParseLockfile(packageJsonPath: string): Promise<Lockfil
 
 /**
  * Parse a lockfile given its filename and content.
+ * For pnpm workspaces, pass workspacePath (e.g., "packages/frontend") to read
+ * the correct importer section instead of the root.
  */
-export function parseLockfile(filename: string, content: string): LockfileResult | null {
+export function parseLockfile(
+  filename: string,
+  content: string,
+  workspacePath?: string,
+): LockfileResult | null {
   const name = basename(filename);
   if (name === "bun.lock") {
     return parseBunLock(content);
@@ -51,12 +57,12 @@ export function parseLockfile(filename: string, content: string): LockfileResult
     return parsePackageLock(content);
   }
   if (name === "pnpm-lock.yaml") {
-    return parsePnpmLock(content);
+    return parsePnpmLock(content, workspacePath);
   }
   return null;
 }
 
-function parsePnpmLock(content: string): LockfileResult | null {
+function parsePnpmLock(content: string, workspacePath?: string): LockfileResult | null {
   try {
     const lock = parse(content) as {
       importers?: Record<
@@ -68,7 +74,8 @@ function parsePnpmLock(content: string): LockfileResult | null {
         }
       >;
     };
-    const importer = lock.importers?.["."] ?? lock.importers?.[""];
+    const importerKey = workspacePath ?? ".";
+    const importer = lock.importers?.[importerKey] ?? lock.importers?.["."] ?? lock.importers?.[""];
     const packages = new Map<string, string>();
 
     for (const section of [

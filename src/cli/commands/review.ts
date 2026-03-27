@@ -1,5 +1,5 @@
 import { access, readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import chalk from "chalk";
 import ora from "ora";
 import { buildReportForPackageSpec } from "../../core/analyzer.js";
@@ -29,6 +29,7 @@ export interface ReviewOptions extends AnalyzeOptions {
   prNumber?: string;
   repo?: string;
   updateComment?: boolean;
+  lockfilePath?: string;
 }
 
 export async function reviewCommand(target: string, options: ReviewOptions): Promise<void> {
@@ -87,8 +88,8 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
     security: options.security,
   };
 
-  const baseLockfile = await loadAdjacentLockfile(target, baseRef);
-  const headLockfile = await loadAdjacentLockfile(target, headRef);
+  const baseLockfile = await loadAdjacentLockfile(target, baseRef, options.lockfilePath);
+  const headLockfile = await loadAdjacentLockfile(target, headRef, options.lockfilePath);
 
   const baseDeps = collectDirectDependencies(
     basePkg as Parameters<typeof collectDirectDependencies>[0],
@@ -104,9 +105,10 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
 
   // Apply exclude-packages filter (CLI option + config)
   const excludePatterns = parseExcludePackages(options.excludePackages, config.excludePackages);
-  const changes = excludePatterns.length > 0
-    ? allChanges.filter((c) => !isExcludedPackage(c.name, excludePatterns))
-    : allChanges;
+  const changes =
+    excludePatterns.length > 0
+      ? allChanges.filter((c) => !isExcludedPackage(c.name, excludePatterns))
+      : allChanges;
 
   let diff: DependencyDiff;
   if (changes.length === 0) {
@@ -233,29 +235,69 @@ async function loadFileAtRefOrPath(filePath: string, ref?: string): Promise<stri
   return readFile(ref, "utf-8");
 }
 
+async function findGitRoot(): Promise<string | null> {
+  try {
+    const result = await runCommand("git", ["rev-parse", "--show-toplevel"]);
+    return result.exitCode === 0 ? result.stdout.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function computeWorkspacePath(lockfileDir: string, packageJsonDir: string): string | undefined {
+  const rel = relative(lockfileDir, packageJsonDir).replace(/\\/g, "/");
+  return rel && rel !== "." ? rel : undefined;
+}
+
+const LOCKFILE_NAMES = ["pnpm-lock.yaml", "bun.lock", "package-lock.json"];
+
 async function loadAdjacentLockfile(
   packageJsonPath: string,
   ref?: string,
+  explicitLockfilePath?: string,
 ): Promise<ReturnType<typeof parseLockfile> | null> {
   if (ref && (await isReadableFile(ref))) {
     ref = undefined;
   }
 
-  const prefix = dirname(packageJsonPath);
-  const candidates = [
-    join(prefix === "." ? "" : prefix, "pnpm-lock.yaml"),
-    join(prefix === "." ? "" : prefix, "bun.lock"),
-    join(prefix === "." ? "" : prefix, "package-lock.json"),
-  ];
+  const pkgDir = resolve(dirname(packageJsonPath));
 
-  for (const candidate of candidates) {
+  // Explicit lockfile path takes priority
+  if (explicitLockfilePath) {
     try {
-      const content = await loadFileAtRefOrPath(candidate, ref);
-      const parsed = parseLockfile(candidate, content);
+      const content = await loadFileAtRefOrPath(explicitLockfilePath, ref);
+      const lockfileDir = resolve(dirname(explicitLockfilePath));
+      const workspacePath = computeWorkspacePath(lockfileDir, pkgDir);
+      const parsed = parseLockfile(explicitLockfilePath, content, workspacePath);
       if (parsed && parsed.packages.size > 0) {
         return parsed;
       }
     } catch {}
+    return null;
+  }
+
+  // Walk up from package.json directory, stopping at git root
+  const gitRoot = await findGitRoot();
+  let dir = pkgDir;
+
+  while (true) {
+    for (const lockfileName of LOCKFILE_NAMES) {
+      const candidate = join(dir, lockfileName);
+      try {
+        const content = await loadFileAtRefOrPath(candidate, ref);
+        const workspacePath = computeWorkspacePath(dir, pkgDir);
+        const parsed = parseLockfile(candidate, content, workspacePath);
+        if (parsed && parsed.packages.size > 0) {
+          return parsed;
+        }
+      } catch {}
+    }
+
+    // Stop at git root to avoid picking up unrelated lockfiles
+    if (gitRoot && dir === resolve(gitRoot)) break;
+    const parent = dirname(dir);
+    if (parent === dir) break; // filesystem root fallback
+    dir = parent;
   }
 
   return null;

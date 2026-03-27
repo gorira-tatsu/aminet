@@ -2,13 +2,15 @@
  * Parse exclude-packages from CLI (comma-separated string) and config (string array),
  * returning a deduplicated array of patterns.
  */
-export function parseExcludePackages(
-  cliOption?: string,
-  configOption?: string[],
-): string[] {
+export function parseExcludePackages(cliOption?: string, configOption?: string[]): string[] {
   const patterns: string[] = [];
   if (cliOption) {
-    patterns.push(...cliOption.split(",").map((s) => s.trim()).filter(Boolean));
+    patterns.push(
+      ...cliOption
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
   }
   if (configOption) {
     patterns.push(...configOption);

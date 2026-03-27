@@ -114,5 +114,70 @@ importers:
       const result = parseLockfile("pnpm-lock.yaml", content);
       expect(result?.packages.get("eslint")).toBe("9.39.1");
     });
+
+    it("reads workspace importer when workspacePath is provided", () => {
+      const content = `
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      root-pkg:
+        specifier: ^1.0.0
+        version: 1.0.0
+  packages/frontend:
+    dependencies:
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+    devDependencies:
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4
+`;
+
+      const result = parseLockfile("pnpm-lock.yaml", content, "packages/frontend");
+      expect(result).not.toBeNull();
+      expect(result!.packages.get("react")).toBe("18.3.1");
+      expect(result!.packages.get("vitest")).toBe("3.2.4");
+      expect(result!.packages.has("root-pkg")).toBe(false);
+    });
+
+    it("falls back to root importer when workspace path not found", () => {
+      const content = `
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      express:
+        specifier: ^4.21.0
+        version: 4.21.2
+`;
+
+      const result = parseLockfile("pnpm-lock.yaml", content, "packages/nonexistent");
+      expect(result).not.toBeNull();
+      expect(result!.packages.get("express")).toBe("4.21.2");
+    });
+
+    it("reads root importer when no workspacePath provided", () => {
+      const content = `
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      express:
+        specifier: ^4.21.0
+        version: 4.21.2
+  packages/lib:
+    dependencies:
+      lodash:
+        specifier: ^4.17.0
+        version: 4.17.21
+`;
+
+      const result = parseLockfile("pnpm-lock.yaml", content);
+      expect(result).not.toBeNull();
+      expect(result!.packages.get("express")).toBe("4.21.2");
+      expect(result!.packages.has("lodash")).toBe(false);
+    });
   });
 });
