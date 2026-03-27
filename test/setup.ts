@@ -1,8 +1,8 @@
 import { afterEach, vi } from "vitest";
 
-// Restore all mocks after each test to prevent leakage between tests
+// Clear call history after each test without dropping module-level mock implementations.
 afterEach(() => {
-  vi.restoreAllMocks();
+  vi.clearAllMocks();
 });
 
 // Guard against accidental network calls in unit tests
