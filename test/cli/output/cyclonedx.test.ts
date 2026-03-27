@@ -116,7 +116,6 @@ describe("buildCycloneDxBom", () => {
     const { report, graph } = makeTestData();
     const bom = buildCycloneDxBom(report, graph);
 
-    expect(packageVersion).toBe("0.2.0");
     expect(bom.metadata.tools[0].version).toBe(packageVersion);
   });
 });

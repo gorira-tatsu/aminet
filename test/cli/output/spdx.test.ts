@@ -117,7 +117,6 @@ describe("buildSpdxDocument", () => {
     const { report, graph } = makeTestData();
     const doc = buildSpdxDocument(report, graph);
 
-    expect(packageVersion).toBe("0.2.0");
     expect(doc.creationInfo.creators).toContain(`Tool: aminet-${packageVersion}`);
   });
 });
