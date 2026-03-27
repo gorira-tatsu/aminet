@@ -72,6 +72,17 @@ main          (production — always releasable)
 - Keep `stg` stable — do not merge broken or incomplete work
 - Rebase or merge from `stg` if your branch falls behind
 
+## Code quality
+
+This project uses [Biome](https://biomejs.dev/) for linting and formatting. Run it before every commit:
+
+```bash
+pnpm lint          # lint + format check
+pnpm lint --write  # auto-fix lint and format issues
+```
+
+All code must pass `pnpm lint` with zero errors before merging. CI will enforce this once the lint workflow is in place (see #15).
+
 ## Pull request expectations
 
 - Keep changes scoped
