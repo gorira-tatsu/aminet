@@ -9,7 +9,7 @@ const program = new Command();
 
 program
   .name("aminet")
-  .description("Software supply chain security tool for npm packages")
+  .description("Software supply chain security tool for npm and Python packages")
   .version("0.1.1");
 
 // analyze command
@@ -18,7 +18,7 @@ program
   .description("Analyze dependencies, licenses, and vulnerabilities")
   .argument(
     "<package>",
-    "Package (e.g., express@4.21.2) or file path (package.json, pnpm-lock.yaml)",
+    "Package (e.g., express@4.21.2) or file path (package.json, requirements.txt)",
   )
   .option("--json", "Output as JSON")
   .option("--tree", "Output as dependency tree")
@@ -70,6 +70,7 @@ program
     "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)",
   )
   .option("--npm-token <token>", "npm auth token for private registries")
+  .option("--ecosystem <name>", "Package ecosystem: npm or pypi (auto-detected from file)")
   .action(analyzeCommand);
 
 // ci command (alias for analyze --ci --json)

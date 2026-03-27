@@ -36,6 +36,8 @@ export interface AnalyzeOptions {
   // Private package support
   excludePackages?: string; // comma-separated package names or wildcards
   npmToken?: string;
+  // Ecosystem
+  ecosystem?: "npm" | "pypi"; // package ecosystem (auto-detected from file)
 }
 
 export interface ReviewOptions extends AnalyzeOptions {

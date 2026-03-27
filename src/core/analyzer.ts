@@ -1,6 +1,7 @@
 import { isExcludedPackage } from "../utils/exclude.js";
 import { logger } from "../utils/logger.js";
 import { runAnalysisPhases } from "./analysis/phases.js";
+import { resolvePythonDependencyGraph } from "./graph/py-resolver.js";
 import { resolveDependencyGraph } from "./graph/resolver.js";
 import type { DependencyEdge, DependencyGraph, PackageNode } from "./graph/types.js";
 import { buildReport } from "./report/builder.js";
@@ -22,6 +23,7 @@ export interface AnalyzerOptions {
   minTrustScore?: number;
   deepLicenseCheck?: boolean;
   excludePackages?: string[];
+  ecosystem?: "npm" | "pypi";
 }
 
 export interface AnalysisResult {
@@ -35,15 +37,26 @@ export async function buildReportForPackageSpec(
   versionRange: string,
   options: AnalyzerOptions,
 ): Promise<AnalysisResult> {
-  const graph = await resolveDependencyGraph(name, versionRange, {
-    maxDepth: options.depth,
-    concurrency: options.concurrency ?? 5,
-  });
+  const ecosystem = options.ecosystem ?? "npm";
+  const osvEcosystem = ecosystem === "pypi" ? "PyPI" : "npm";
+
+  const graph =
+    ecosystem === "pypi"
+      ? await resolvePythonDependencyGraph(name, versionRange, {
+          maxDepth: options.depth,
+          concurrency: options.concurrency ?? 5,
+        })
+      : await resolveDependencyGraph(name, versionRange, {
+          maxDepth: options.depth,
+          concurrency: options.concurrency ?? 5,
+        });
 
   const vulnerabilities = await scanVulnerabilities(
     graph,
     options.concurrency ?? 5,
     !options.noCache,
+    undefined,
+    osvEcosystem,
   ).catch(() => [] as VulnerabilityResult[]);
 
   const { reportOptions } = await runAnalysisPhases(graph, options).catch(() => ({
@@ -96,9 +109,12 @@ export async function buildReportFromPackageJson(
   let _resolvedCount = 0;
   let _skippedCount = 0;
 
+  const resolveGraph =
+    (options.ecosystem ?? "npm") === "pypi" ? resolvePythonDependencyGraph : resolveDependencyGraph;
+
   for (const [depName, depRange] of depEntries) {
     try {
-      const graph = await resolveDependencyGraph(depName, depRange, {
+      const graph = await resolveGraph(depName, depRange, {
         maxDepth: options.depth,
         concurrency: options.concurrency ?? 5,
       });
@@ -131,10 +147,15 @@ export async function buildReportFromPackageJson(
     edges: allEdges,
   };
 
+  const ecosystem = options.ecosystem ?? "npm";
+  const osvEcosystem = ecosystem === "pypi" ? "PyPI" : "npm";
+
   const vulnerabilities = await scanVulnerabilities(
     graph,
     options.concurrency ?? 5,
     !options.noCache,
+    undefined,
+    osvEcosystem,
   ).catch(() => [] as VulnerabilityResult[]);
 
   const { reportOptions } = await runAnalysisPhases(graph, options).catch(() => ({

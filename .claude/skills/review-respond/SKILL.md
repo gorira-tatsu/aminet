@@ -2,12 +2,22 @@
 name: review-respond
 description: Respond to GitHub PR review comments by reading feedback, applying code fixes, and pushing updates. Use this skill when the user says "/review-respond", asks to "address PR reviews", "fix review comments", "respond to PR feedback", or wants to handle code review suggestions on a pull request. Also use when the user mentions "review came in" or "address the review".
 argument-hint: "[PR number] — omit to use the current branch's PR"
-allowed-tools: [Read, Write, Edit, Glob, Grep, Bash(gh pr:*), Bash(gh api:*), Bash(git add:*), Bash(git commit:*), Bash(git push:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git status:*), Bash(bun build:*), Bash(bun test:*)]
+allowed-tools: [Read, Write, Edit, Glob, Grep, Bash(gh pr:*), Bash(gh api:*), Bash(git add:*), Bash(git commit:*), Bash(git push:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git status:*), Bash(pnpm build:*), Bash(pnpm test:*), Bash(pnpm lint:*)]
 ---
 
 # PR Review Responder
 
 Read PR review comments, analyze them, apply code fixes, and push updates.
+
+## Language rule
+
+**ALL output must be in English.** This includes:
+- Commit messages
+- PR reply comments
+- Code comments and documentation added or modified as part of fixes
+- The summary report back to the user
+
+This rule is non-negotiable regardless of the reviewer's language or the user's language.
 
 ## Arguments
 
@@ -65,11 +75,12 @@ Group related fixes logically. Avoid fixing things that would conflict with othe
 After all fixes are applied:
 
 ```bash
-bun build src/index.ts --outdir dist --target node
-bun test
+pnpm build
+pnpm lint
+pnpm test
 ```
 
-If the build or tests fail, investigate and fix before proceeding.
+If the build, lint, or tests fail, investigate and fix before proceeding.
 
 ### Step 6: Commit and push
 
@@ -86,22 +97,44 @@ Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 git push
 ```
 
-### Step 7: Report results
+### Step 7: Reply to each review comment on GitHub
+
+After pushing fixes, reply to each addressed review comment on the PR **in English**:
+
+```bash
+# Reply to an inline review comment
+gh api repos/{owner}/{repo}/pulls/<PR>/comments/<comment_id>/replies \
+  -f body="Fixed — <brief explanation of what was changed and why>"
+
+# Reply to a review-level comment
+gh pr comment <PR> --body "Addressed review feedback from @reviewer:
+- <fix 1 summary>
+- <fix 2 summary>"
+```
+
+Reply guidelines:
+- Keep replies concise (1-2 sentences per fix)
+- Reference the specific change made (e.g., "Switched to `relative()` for repo-relative paths")
+- For skipped suggestions, explain why (e.g., "Skipped — this would break X because Y")
+- For questions, provide a clear answer or flag for the user
+
+### Step 8: Report results
 
 Summarize what was done:
 
-```
+```md
 ## Review Response Summary
 
 ### Applied fixes
-- [file:line] Description of fix (from @reviewer)
-- [file:line] Description of fix (from @reviewer)
+- [file:line] Description of fix (from @reviewer) — replied on PR
+- [file:line] Description of fix (from @reviewer) — replied on PR
 
 ### Skipped (manual response needed)
 - [file:line] @reviewer asked: "question..." → needs human reply
 
 ### Verification
 - Build: pass/fail
+- Lint: pass/fail
 - Tests: pass/fail
 ```
 

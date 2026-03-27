@@ -38,12 +38,14 @@ node dist/index.js review package.json --base HEAD~1 --security
 - `src/core`: analysis engines, stores, and report builders
 - `src/utils`: shared HTTP, logging, and concurrency helpers
 - `test`: unit and regression coverage
+- `.claude/skills`: canonical skill definitions tracked in the repository
+- `.codex/skills`: symlink to `.claude/skills` so Codex can use the same project skills
 
 ## Branching strategy
 
 This project uses a **main / stg / feature-branch** workflow:
 
-```
+```text
 main          (production — always releasable)
  └─ stg       (staging — integration branch for the next release)
      ├─ feat/xxx
@@ -67,7 +69,8 @@ main          (production — always releasable)
 
 ### Rules
 
-- Never push directly to `main` or `stg`
+- Never push directly to `main` or `stg` from day-to-day development.
+  Exception: approved release automation (for example `/release`) may perform controlled merges or pushes.
 - Always create a pull request for changes
 - Keep `stg` stable — do not merge broken or incomplete work
 - Rebase or merge from `stg` if your branch falls behind

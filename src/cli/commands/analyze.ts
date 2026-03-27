@@ -7,11 +7,16 @@ import { runAnalysisPhases } from "../../core/analysis/phases.js";
 import { buildReportFromPackageJson } from "../../core/analyzer.js";
 import { loadConfig } from "../../core/config/loader.js";
 import type { AmiConfig } from "../../core/config/types.js";
+import { resolvePythonDependencyGraph } from "../../core/graph/py-resolver.js";
 import { resolveDependencyGraph } from "../../core/graph/resolver.js";
 import type { DependencyGraph } from "../../core/graph/types.js";
 import { checkDenyList } from "../../core/license/deny-list.js";
 import { getLicenseAlternatives } from "../../core/license/spdx.js";
 import { tryParseLockfile } from "../../core/lockfile/parser.js";
+import {
+  parsePyprojectDependencies,
+  parseRequirementsTxt,
+} from "../../core/lockfile/python-parser.js";
 import type { PhantomDependency } from "../../core/phantom/scanner.js";
 import { scanPhantomDependencies } from "../../core/phantom/scanner.js";
 import type { PinningReport } from "../../core/pinning/analyzer.js";
@@ -23,7 +28,7 @@ import { getDatabase } from "../../core/store/database.js";
 import type { VulnSource } from "../../core/vulnerability/aggregator.js";
 import { scanVulnerabilities } from "../../core/vulnerability/scanner.js";
 import type { VulnerabilityResult } from "../../core/vulnerability/types.js";
-import { parseExcludePackages } from "../../utils/exclude.js";
+import { isExcludedPackage, parseExcludePackages } from "../../utils/exclude.js";
 import { logger, setLogLevel } from "../../utils/logger.js";
 import type { AnalyzeOptions } from "../options.js";
 import { renderCycloneDx } from "../output/cyclonedx.js";
@@ -76,9 +81,18 @@ export async function analyzeCommand(target: string, options: AnalyzeOptions): P
   const useSpinner =
     !isCi && !options.dot && !options.mermaid && !options.cyclonedx && !options.spdx;
 
+  // Auto-detect Python file mode
+  const targetBasename = basename(target);
+  const isPythonFile = targetBasename === "requirements.txt" || targetBasename === "pyproject.toml";
+
+  if (isPythonFile) {
+    options.ecosystem = options.ecosystem ?? "pypi";
+  }
+
   // Auto-detect file mode: if target looks like a file path, treat it as --file
   const isFilePath =
     options.file ||
+    isPythonFile ||
     target.endsWith(".json") ||
     target === "package.json" ||
     target.includes("/") ||
@@ -90,12 +104,17 @@ export async function analyzeCommand(target: string, options: AnalyzeOptions): P
     target === "package-lock.json";
 
   if (isFilePath) {
-    await analyzeFile(target, options, config, useSpinner);
+    if (options.ecosystem === "pypi") {
+      await analyzePythonFile(target, options, config, useSpinner);
+    } else {
+      await analyzeFile(target, options, config, useSpinner);
+    }
     return;
   }
 
   const parsed = parsePackageSpec(target);
-  await analyzePackage(parsed.name, parsed.versionRange, options, config, useSpinner);
+  const ecosystem = options.ecosystem ?? "npm";
+  await analyzePackage(parsed.name, parsed.versionRange, options, config, useSpinner, ecosystem);
 }
 
 function mergeConfig(options: AnalyzeOptions, config: AmiConfig): void {
@@ -252,12 +271,82 @@ async function analyzeFile(
   });
 }
 
+async function analyzePythonFile(
+  filePath: string,
+  options: AnalyzeOptions,
+  config: AmiConfig,
+  useSpinner: boolean,
+): Promise<void> {
+  const content = await readFile(filePath, "utf-8");
+  const fileBaseName = basename(filePath);
+
+  let deps: Map<string, string>;
+  let packageName = fileBaseName;
+  let packageVersion = "0.0.0";
+
+  if (fileBaseName === "pyproject.toml") {
+    const parsed = parsePyprojectDependencies(content);
+    deps = new Map(parsed.dependencies);
+    packageName = parsed.name ?? fileBaseName;
+    packageVersion = parsed.version ?? packageVersion;
+    if (options.dev) {
+      for (const [name, ver] of parsed.devDependencies) {
+        deps.set(name, ver);
+      }
+    }
+  } else {
+    deps = parseRequirementsTxt(content);
+  }
+
+  // Apply exclude patterns
+  const excludePatterns = parseExcludePackages(options.excludePackages, config.excludePackages);
+  if (excludePatterns.length > 0) {
+    for (const name of [...deps.keys()]) {
+      if (isExcludedPackage(name, excludePatterns)) {
+        deps.delete(name);
+      }
+    }
+  }
+
+  if (deps.size === 0) {
+    console.error(chalk.yellow(`No dependencies found in ${filePath}`));
+    return;
+  }
+
+  const spinner = useSpinner
+    ? ora(`Analyzing ${deps.size} Python dependencies from ${filePath}...`).start()
+    : null;
+
+  // Build a virtual package.json-like structure for the analyzer
+  const depObj: Record<string, string> = {};
+  for (const [name, ver] of deps) {
+    depObj[name] = ver;
+  }
+
+  const result = await buildReportFromPackageJson(
+    { name: packageName, version: packageVersion, dependencies: depObj },
+    {
+      depth: options.depth,
+      concurrency: options.concurrency,
+      noCache: options.noCache,
+      ecosystem: "pypi",
+    },
+  );
+
+  if (spinner) {
+    spinner.succeed(`Resolved ${result.graph.nodes.size} packages`);
+  }
+
+  outputAndExit(result.graph, result.vulnerabilities, options, config);
+}
+
 async function analyzePackage(
   packageName: string,
   versionRange: string,
   options: AnalyzeOptions,
   config: AmiConfig,
   useSpinner: boolean,
+  ecosystem: "npm" | "pypi" = "npm",
 ): Promise<void> {
   // Phase 1: Resolve dependency graph
   const spinner = useSpinner
@@ -270,20 +359,27 @@ async function analyzePackage(
 
   let graph: DependencyGraph;
   try {
-    graph = await resolveDependencyGraph(
-      packageName,
-      versionRange,
-      {
+    if (ecosystem === "pypi") {
+      graph = await resolvePythonDependencyGraph(packageName, versionRange, {
         maxDepth: options.depth,
         concurrency: options.concurrency ?? 5,
-        includeDev: options.dev,
-      },
-      (resolved, pending) => {
-        if (spinner) {
-          spinner.text = `Resolving dependencies... (${resolved} resolved, ${pending} pending)`;
-        }
-      },
-    );
+      });
+    } else {
+      graph = await resolveDependencyGraph(
+        packageName,
+        versionRange,
+        {
+          maxDepth: options.depth,
+          concurrency: options.concurrency ?? 5,
+          includeDev: options.dev,
+        },
+        (resolved, pending) => {
+          if (spinner) {
+            spinner.text = `Resolving dependencies... (${resolved} resolved, ${pending} pending)`;
+          }
+        },
+      );
+    }
     if (spinner) {
       spinner.succeed(`Resolved ${graph.nodes.size} packages (${graph.edges.length} edges)`);
     }
@@ -301,7 +397,8 @@ async function analyzePackage(
   // Parse vuln sources
   const vulnSources = parseVulnSources(options.vulnSources);
 
-  const vulnerabilities = await scanPhase(graph, options, useSpinner, vulnSources);
+  const osvEcosystem = ecosystem === "pypi" ? "PyPI" : "npm";
+  const vulnerabilities = await scanPhase(graph, options, useSpinner, vulnSources, osvEcosystem);
 
   outputAndExit(graph, vulnerabilities, options, config);
 }
@@ -325,6 +422,7 @@ async function scanPhase(
   options: AnalyzeOptions,
   useSpinner: boolean,
   vulnSources?: VulnSource[],
+  ecosystem = "npm",
 ): Promise<VulnerabilityResult[]> {
   const spinner = useSpinner ? ora("Scanning for vulnerabilities...").start() : null;
 
@@ -339,6 +437,7 @@ async function scanPhase(
       options.concurrency ?? 5,
       !options.noCache,
       vulnSources,
+      ecosystem,
     );
     const totalVulns = vulnerabilities.reduce((sum, v) => sum + v.vulnerabilities.length, 0);
     if (totalVulns > 0) {
