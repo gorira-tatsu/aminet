@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDefaultConfig,
   mergeConfigs,
+  normalizeThresholdInput,
   parseBooleanInput,
 } from "../../../src/cli/commands/init.js";
 
@@ -75,6 +76,24 @@ describe("init command helpers", () => {
 
     it("rejects unrecognized input", () => {
       expect(parseBooleanInput("maybe", true)).toBeNull();
+    });
+  });
+
+  describe("normalizeThresholdInput", () => {
+    it("normalizes valid values", () => {
+      const allowed = new Set(["low", "medium", "high", "critical"]);
+      expect(normalizeThresholdInput("HIGH", allowed)).toBe("high");
+      expect(normalizeThresholdInput(" critical ", allowed)).toBe("critical");
+    });
+
+    it("allows empty input for optional prompts", () => {
+      const allowed = new Set(["copyleft", "weak-copyleft"]);
+      expect(normalizeThresholdInput("", allowed)).toBe("");
+    });
+
+    it("rejects invalid threshold values", () => {
+      const allowed = new Set(["low", "medium", "high", "critical"]);
+      expect(normalizeThresholdInput("hgh", allowed)).toBeNull();
     });
   });
 });

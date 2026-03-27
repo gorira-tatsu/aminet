@@ -18,7 +18,12 @@ interface ConfigField {
   type: "string" | "number" | "boolean" | "string[]";
   defaultValue: unknown;
   hint?: string;
+  validate?: (input: string) => string | null;
+  invalidMessage?: string;
 }
+
+const VULN_THRESHOLDS = new Set(["low", "medium", "high", "critical"]);
+const LICENSE_THRESHOLDS = new Set(["copyleft", "weak-copyleft"]);
 
 const CONFIG_FIELDS: ConfigField[] = [
   {
@@ -26,6 +31,8 @@ const CONFIG_FIELDS: ConfigField[] = [
     prompt: "Vulnerability severity threshold (low/medium/high/critical)",
     type: "string",
     defaultValue: "high",
+    validate: (input) => normalizeThresholdInput(input, VULN_THRESHOLDS),
+    invalidMessage: "Enter one of: low, medium, high, critical.",
   },
   {
     key: "security",
@@ -70,6 +77,8 @@ const CONFIG_FIELDS: ConfigField[] = [
     prompt: "License failure threshold (copyleft/weak-copyleft, or empty for none)",
     type: "string",
     defaultValue: undefined,
+    validate: (input) => normalizeThresholdInput(input, LICENSE_THRESHOLDS),
+    invalidMessage: "Enter one of: copyleft, weak-copyleft.",
   },
   {
     key: "excludePackages",
@@ -120,6 +129,15 @@ export function parseBooleanInput(input: string, fallback: boolean): boolean | n
     return false;
   }
   return null;
+}
+
+export function normalizeThresholdInput(
+  input: string,
+  allowed: ReadonlySet<string>,
+): string | null {
+  const normalized = input.trim().toLowerCase();
+  if (normalized === "") return "";
+  return allowed.has(normalized) ? normalized : null;
 }
 
 function formatConfig(config: AmiConfig, redactSecrets = true): string {
@@ -271,12 +289,27 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
           (config as Record<string, unknown>)[field.key] = [...promptDefault];
         }
       } else {
-        const answer = await rl.question(`  ${field.prompt}${hint}${defaultHint}: `);
-        const trimmed = answer.trim();
-        if (trimmed) {
-          (config as Record<string, unknown>)[field.key] = trimmed;
-        } else if (promptDefault !== undefined) {
-          (config as Record<string, unknown>)[field.key] = promptDefault;
+        while (true) {
+          const answer = await rl.question(`  ${field.prompt}${hint}${defaultHint}: `);
+          const trimmed = answer.trim();
+          if (trimmed === "") {
+            if (promptDefault !== undefined) {
+              (config as Record<string, unknown>)[field.key] = promptDefault;
+            }
+            break;
+          }
+
+          if (field.validate) {
+            const validated = field.validate(trimmed);
+            if (validated === null) {
+              console.log(chalk.yellow(`  ${field.invalidMessage ?? "Invalid input."}`));
+              continue;
+            }
+            (config as Record<string, unknown>)[field.key] = validated;
+          } else {
+            (config as Record<string, unknown>)[field.key] = trimmed;
+          }
+          break;
         }
       }
     }
