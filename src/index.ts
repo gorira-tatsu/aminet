@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { analyzeCommand } from "./cli/commands/analyze.js";
 import { cacheClearCommand, cachePruneCommand, cacheStatsCommand } from "./cli/commands/cache.js";
+import { initCommand } from "./cli/commands/init.js";
 import { reviewCommand } from "./cli/commands/review.js";
 
 const program = new Command();
@@ -113,6 +114,15 @@ program
   .option("-v, --verbose", "Verbose logging")
   .option("--ci", "CI mode (no spinner)")
   .action(reviewCommand);
+
+// init command
+program
+  .command("init")
+  .description("Generate aminet.config.json interactively")
+  .option("--defaults", "Use default values (non-interactive)")
+  .option("--force", "Overwrite existing config (use with --defaults)")
+  .option("--merge", "Merge with existing config (use with --defaults)")
+  .action(initCommand);
 
 // cache commands
 const cache = program.command("cache").description("Manage the local cache");
