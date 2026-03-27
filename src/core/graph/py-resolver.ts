@@ -33,8 +33,16 @@ export async function resolvePythonDependencyGraph(
   const edges: DependencyEdge[] = [];
   const semaphore = new Semaphore(concurrency);
 
-  // Fetch root package
-  const rootPkg = await getPyPIPackage(rootName, rootVersion);
+  // Fetch root package — handle "latest", empty, and range specifiers
+  const pinnedRootMatch = rootVersion.match(/^==\s*(.+)$/);
+  let rootPkg: Awaited<ReturnType<typeof getPyPIPackage>>;
+  if (pinnedRootMatch) {
+    rootPkg = await getPyPIPackage(rootName, pinnedRootMatch[1].trim());
+  } else if (!rootVersion || rootVersion === "latest" || /[<>=!^~*,]/.test(rootVersion)) {
+    rootPkg = await getPyPIPackage(rootName);
+  } else {
+    rootPkg = await getPyPIPackage(rootName, rootVersion);
+  }
   const rootId = `${rootPkg.info.name}@${rootPkg.info.version}`;
 
   const rootLicenseRaw = extractLicenseFromPyPI(rootPkg.info);

@@ -161,9 +161,23 @@ function extractTomlArray(content: string, section: string, field: string): stri
   const bracketStart = fieldMatch.index + fieldMatch[0].length;
   const remaining = sectionContent.slice(bracketStart);
 
-  // Find the closing bracket; nested brackets are not expected
-  // since TOML dependency arrays only contain strings
-  const closingBracket = remaining.indexOf("]");
+  // Find the closing bracket, skipping brackets inside quoted strings
+  // (e.g., "package[extras]>=1.0")
+  let closingBracket = -1;
+  let inString = false;
+  let stringChar = "";
+  for (let i = 0; i < remaining.length; i++) {
+    const ch = remaining[i];
+    if (inString) {
+      if (ch === stringChar) inString = false;
+    } else if (ch === '"' || ch === "'") {
+      inString = true;
+      stringChar = ch;
+    } else if (ch === "]") {
+      closingBracket = i;
+      break;
+    }
+  }
   if (closingBracket === -1) return [];
 
   const arrayContent = remaining.slice(0, closingBracket);
