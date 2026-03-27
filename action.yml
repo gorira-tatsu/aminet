@@ -19,6 +19,9 @@ inputs:
   security:
     description: "Enable security deep analysis"
     default: "true"
+  dev:
+    description: "Include devDependencies in review (default: true)"
+    default: "true"
   exclude-packages:
     description: "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)"
     required: false
@@ -66,6 +69,9 @@ runs:
         fi
         if [ "${{ inputs.security }}" = "true" ]; then
           ARGS="$ARGS --security"
+        fi
+        if [ "${{ inputs.dev }}" = "false" ]; then
+          ARGS="$ARGS --no-dev"
         fi
         if [ -n "${{ inputs.exclude-packages }}" ]; then
           ARGS="$ARGS --exclude-packages '${{ inputs.exclude-packages }}'"

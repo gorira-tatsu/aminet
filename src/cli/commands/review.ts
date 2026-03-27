@@ -104,9 +104,10 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
 
   // Apply exclude-packages filter (CLI option + config)
   const excludePatterns = parseExcludePackages(options.excludePackages, config.excludePackages);
-  const changes = excludePatterns.length > 0
-    ? allChanges.filter((c) => !isExcludedPackage(c.name, excludePatterns))
-    : allChanges;
+  const changes =
+    excludePatterns.length > 0
+      ? allChanges.filter((c) => !isExcludedPackage(c.name, excludePatterns))
+      : allChanges;
 
   let diff: DependencyDiff;
   if (changes.length === 0) {

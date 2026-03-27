@@ -64,7 +64,10 @@ program
   .option("--provenance", "Check npm provenance attestations")
   .option("--pinning", "Analyze version pinning strategy")
   // Private package support
-  .option("--exclude-packages <list>", "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)")
+  .option(
+    "--exclude-packages <list>",
+    "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)",
+  )
   .option("--npm-token <token>", "npm auth token for private registries")
   .action(analyzeCommand);
 
@@ -99,10 +102,13 @@ program
   .option("--update-comment", "Update existing aminet comment instead of creating new")
   .option("-d, --depth <number>", "Maximum dependency depth", parseInt)
   .option("-c, --concurrency <number>", "Maximum concurrent requests", parseInt)
-  .option("--dev", "Include devDependencies")
+  .option("--no-dev", "Exclude devDependencies from review")
   .option("--no-cache", "Skip cache reads")
   .option("--security", "Enable security deep analysis")
-  .option("--exclude-packages <list>", "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)")
+  .option(
+    "--exclude-packages <list>",
+    "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)",
+  )
   .option("--npm-token <token>", "npm auth token for private registries")
   .option("-v, --verbose", "Verbose logging")
   .option("--ci", "CI mode (no spinner)")
