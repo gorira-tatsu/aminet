@@ -235,7 +235,7 @@ async function loadFileAtRefOrPath(filePath: string, ref?: string): Promise<stri
   return readFile(ref, "utf-8");
 }
 
-async function findGitRoot(): Promise<string | null> {
+export async function findGitRoot(): Promise<string | null> {
   try {
     const result = await runCommand("git", ["rev-parse", "--show-toplevel"]);
     return result.exitCode === 0 ? result.stdout.trim() : null;
@@ -244,7 +244,10 @@ async function findGitRoot(): Promise<string | null> {
   }
 }
 
-function computeWorkspacePath(lockfileDir: string, packageJsonDir: string): string | undefined {
+export function computeWorkspacePath(
+  lockfileDir: string,
+  packageJsonDir: string,
+): string | undefined {
   const rel = relative(lockfileDir, packageJsonDir).replace(/\\/g, "/");
   return rel && rel !== "." ? rel : undefined;
 }
@@ -266,7 +269,7 @@ function toGitRelativePath(filePath: string, gitRoot: string | null): string {
 
 const LOCKFILE_NAMES = ["pnpm-lock.yaml", "bun.lock", "package-lock.json"];
 
-async function loadAdjacentLockfile(
+export async function loadAdjacentLockfile(
   packageJsonPath: string,
   ref?: string,
   explicitLockfilePath?: string,

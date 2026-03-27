@@ -1,5 +1,28 @@
-import { describe, expect, it } from "vitest";
-import { extractLicenseFromPyPI, parsePep508 } from "../../../src/core/registry/pypi-client.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const { fetchWithRetry } = vi.hoisted(() => ({
+  fetchWithRetry: vi.fn(),
+}));
+
+vi.mock("../../../src/utils/http.js", () => ({
+  fetchWithRetry,
+}));
+
+import {
+  clearPyPICache,
+  extractLicenseFromPyPI,
+  getPyPIPackage,
+  parsePep508,
+} from "../../../src/core/registry/pypi-client.js";
+
+beforeEach(() => {
+  clearPyPICache();
+  fetchWithRetry.mockReset();
+});
+
+afterEach(() => {
+  clearPyPICache();
+});
 
 describe("pypi-client", () => {
   describe("extractLicenseFromPyPI", () => {
@@ -43,6 +66,66 @@ describe("pypi-client", () => {
         author: null,
       });
       expect(result).toBeNull();
+    });
+
+    it("returns the first matching SPDX classifier when multiple are present", () => {
+      const result = extractLicenseFromPyPI({
+        name: "test",
+        version: "1.0.0",
+        license: "BSD-2-Clause",
+        summary: "",
+        requires_dist: null,
+        classifiers: [
+          "License :: OSI Approved :: MIT License",
+          "License :: OSI Approved :: Apache Software License",
+        ],
+        home_page: null,
+        author: null,
+      });
+      expect(result).toBe("MIT");
+    });
+  });
+
+  describe("getPyPIPackage", () => {
+    it("returns a cached result without fetching again", async () => {
+      const payload = {
+        info: {
+          name: "requests",
+          version: "2.31.0",
+          license: "Apache-2.0",
+          summary: "",
+          requires_dist: null,
+          classifiers: [],
+          home_page: null,
+          author: null,
+        },
+        releases: {},
+      };
+      fetchWithRetry.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => payload,
+      });
+
+      const first = await getPyPIPackage("requests", "2.31.0");
+      const second = await getPyPIPackage("requests", "2.31.0");
+
+      expect(first).toEqual(payload);
+      expect(second).toBe(first);
+      expect(fetchWithRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it("throws a descriptive error on 404", async () => {
+      fetchWithRetry.mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: "Not Found",
+      });
+
+      await expect(getPyPIPackage("missing", "1.0.0")).rejects.toThrow(
+        "PyPI package not found: missing@1.0.0",
+      );
     });
   });
 
