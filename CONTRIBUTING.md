@@ -39,6 +39,50 @@ node dist/index.js review package.json --base HEAD~1 --security
 - `src/utils`: shared HTTP, logging, and concurrency helpers
 - `test`: unit and regression coverage
 
+## Branching strategy
+
+This project uses a **main / stg / feature-branch** workflow:
+
+```
+main          (production — always releasable)
+ └─ stg       (staging — integration branch for the next release)
+     ├─ feat/xxx
+     ├─ fix/yyy
+     └─ docs/zzz
+```
+
+| Branch | Purpose | Merges into |
+|--------|---------|-------------|
+| `main` | Production releases. Protected. | — |
+| `stg` | Staging. All feature branches target this. Must stay stable. | `main` (when ready to release) |
+| `feat/*`, `fix/*`, `docs/*`, etc. | Individual changes. Created from `stg`. | `stg` via pull request |
+
+### Workflow
+
+1. Create a feature branch from `stg`: `git checkout -b feat/my-feature stg`
+2. Develop, commit, and push the branch
+3. Open a pull request targeting `stg`
+4. After review and CI pass, merge into `stg`
+5. When `stg` is stable and ready to release, merge `stg` into `main` and tag a release
+
+### Rules
+
+- Never push directly to `main` or `stg`
+- Always create a pull request for changes
+- Keep `stg` stable — do not merge broken or incomplete work
+- Rebase or merge from `stg` if your branch falls behind
+
+## Code quality
+
+This project uses [Biome](https://biomejs.dev/) for linting and formatting. Run it before every commit:
+
+```bash
+pnpm lint          # lint + format check
+pnpm lint --write  # auto-fix lint and format issues
+```
+
+All code must pass `pnpm lint` with zero errors before merging. CI will enforce this once the lint workflow is in place (see #15).
+
 ## Pull request expectations
 
 - Keep changes scoped
