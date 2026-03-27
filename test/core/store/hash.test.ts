@@ -2,10 +2,8 @@ import { describe, expect, test } from "vitest";
 import { packageHash, packumentHash } from "../../../src/core/store/hash.js";
 
 describe("packageHash", () => {
-  test("produces deterministic output", () => {
-    const h1 = packageHash("npm", "express", "4.21.2");
-    const h2 = packageHash("npm", "express", "4.21.2");
-    expect(h1).toBe(h2);
+  test("produces expected hash for known input", () => {
+    expect(packageHash("npm", "express", "4.21.2")).toBe("705b7eb68a46ed181bba302c3ba5f348");
   });
 
   test("produces 32-character hex string", () => {
@@ -34,10 +32,8 @@ describe("packageHash", () => {
 });
 
 describe("packumentHash", () => {
-  test("produces deterministic output", () => {
-    const h1 = packumentHash("npm", "express");
-    const h2 = packumentHash("npm", "express");
-    expect(h1).toBe(h2);
+  test("produces expected hash for known input", () => {
+    expect(packumentHash("npm", "express")).toBe("1db97c492987c147581a662585d04220");
   });
 
   test("differs from packageHash", () => {

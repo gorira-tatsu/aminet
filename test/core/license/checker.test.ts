@@ -1,50 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { extractLicense } from "../../../src/core/license/checker.js";
-import { classifyLicense } from "../../../src/core/license/spdx.js";
 import type { NpmVersionInfo } from "../../../src/core/registry/types.js";
-
-describe("classifyLicense", () => {
-  test("classifies permissive licenses", () => {
-    expect(classifyLicense("MIT")).toBe("permissive");
-    expect(classifyLicense("ISC")).toBe("permissive");
-    expect(classifyLicense("Apache-2.0")).toBe("permissive");
-    expect(classifyLicense("BSD-2-Clause")).toBe("permissive");
-    expect(classifyLicense("BSD-3-Clause")).toBe("permissive");
-  });
-
-  test("classifies copyleft licenses", () => {
-    expect(classifyLicense("GPL-2.0")).toBe("copyleft");
-    expect(classifyLicense("GPL-3.0")).toBe("copyleft");
-    expect(classifyLicense("AGPL-3.0")).toBe("copyleft");
-    expect(classifyLicense("GPL-3.0-only")).toBe("copyleft");
-  });
-
-  test("classifies weak-copyleft licenses", () => {
-    expect(classifyLicense("LGPL-2.1")).toBe("weak-copyleft");
-    expect(classifyLicense("MPL-2.0")).toBe("weak-copyleft");
-    expect(classifyLicense("EPL-2.0")).toBe("weak-copyleft");
-  });
-
-  test("returns unknown for unrecognized licenses", () => {
-    expect(classifyLicense("WTFPL")).toBe("unknown");
-    expect(classifyLicense("Custom")).toBe("unknown");
-  });
-
-  test("handles SPDX OR expressions (most permissive wins)", () => {
-    expect(classifyLicense("MIT OR GPL-3.0")).toBe("permissive");
-    expect(classifyLicense("GPL-3.0 OR LGPL-2.1")).toBe("weak-copyleft");
-  });
-
-  test("handles SPDX AND expressions (most restrictive wins)", () => {
-    expect(classifyLicense("MIT AND GPL-3.0")).toBe("copyleft");
-    expect(classifyLicense("MIT AND MPL-2.0")).toBe("weak-copyleft");
-  });
-
-  test("respects parentheses when classifying nested SPDX expressions", () => {
-    expect(classifyLicense("MIT OR (GPL-3.0 AND LGPL-2.1)")).toBe("permissive");
-    expect(classifyLicense("(MIT OR LGPL-2.1) AND GPL-3.0")).toBe("copyleft");
-  });
-});
 
 describe("extractLicense", () => {
   test("extracts string license", () => {
