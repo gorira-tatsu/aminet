@@ -81,16 +81,34 @@ export async function analyzeCommand(target: string, options: AnalyzeOptions): P
   const useSpinner =
     !isCi && !options.dot && !options.mermaid && !options.cyclonedx && !options.spdx;
 
-  // Auto-detect Python file mode
-  const targetBasename = basename(target);
-  const isPythonFile = targetBasename === "requirements.txt" || targetBasename === "pyproject.toml";
+  const inferredTarget = inferAnalyzeTarget(target, options);
 
-  if (isPythonFile) {
-    options.ecosystem = options.ecosystem ?? "pypi";
+  if (inferredTarget.fileMode) {
+    options.ecosystem = inferredTarget.ecosystem;
+    if (inferredTarget.ecosystem === "pypi") {
+      await analyzePythonFile(target, options, config, useSpinner);
+    } else {
+      await analyzeFile(target, options, config, useSpinner);
+    }
+    return;
   }
 
-  // Auto-detect file mode: if target looks like a file path, treat it as --file
-  const isFilePath =
+  const parsed = parsePackageSpec(target);
+  const ecosystem = options.ecosystem ?? "npm";
+  await analyzePackage(parsed.name, parsed.versionRange, options, config, useSpinner, ecosystem);
+}
+
+export function inferAnalyzeTarget(
+  target: string,
+  options: Pick<AnalyzeOptions, "ecosystem" | "file">,
+): {
+  ecosystem: "npm" | "pypi";
+  fileMode: boolean;
+} {
+  const targetBasename = basename(target);
+  const isPythonFile = targetBasename === "requirements.txt" || targetBasename === "pyproject.toml";
+  const ecosystem = isPythonFile ? (options.ecosystem ?? "pypi") : (options.ecosystem ?? "npm");
+  const fileMode =
     options.file ||
     isPythonFile ||
     target.endsWith(".json") ||
@@ -103,18 +121,10 @@ export async function analyzeCommand(target: string, options: AnalyzeOptions): P
     target === "bun.lockb" ||
     target === "package-lock.json";
 
-  if (isFilePath) {
-    if (options.ecosystem === "pypi") {
-      await analyzePythonFile(target, options, config, useSpinner);
-    } else {
-      await analyzeFile(target, options, config, useSpinner);
-    }
-    return;
-  }
-
-  const parsed = parsePackageSpec(target);
-  const ecosystem = options.ecosystem ?? "npm";
-  await analyzePackage(parsed.name, parsed.versionRange, options, config, useSpinner, ecosystem);
+  return {
+    ecosystem,
+    fileMode: Boolean(fileMode),
+  };
 }
 
 function mergeConfig(options: AnalyzeOptions, config: AmiConfig): void {

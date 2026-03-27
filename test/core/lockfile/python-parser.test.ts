@@ -52,6 +52,12 @@ requests==2.31.0
       expect(result.has("typing-extensions")).toBe(false);
       expect(result.get("requests")).toBe("2.31.0");
     });
+
+    it("strips inline comments from requirements entries", () => {
+      const result = parseRequirementsTxt("requests==2.31.0 # pinned\nflask>=3.0 # range\n");
+      expect(result.get("requests")).toBe("2.31.0");
+      expect(result.get("flask")).toBe(">=3.0");
+    });
   });
 
   describe("parsePyprojectDependencies", () => {
@@ -95,6 +101,51 @@ dependencies = [
       const result = parsePyprojectDependencies(content);
       expect(result.dependencies.has("requests")).toBe(true);
       expect(result.dependencies.has("typing-extensions")).toBe(false);
+    });
+
+    it("parses dev optional dependencies", () => {
+      const content = `
+[project]
+name = "optional-dev"
+version = "1.0.0"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff==0.5.0",
+]
+`;
+      const result = parsePyprojectDependencies(content);
+      expect(result.devDependencies.get("pytest")).toBe(">=8.0");
+      expect(result.devDependencies.get("ruff")).toBe("0.5.0");
+    });
+
+    it("handles multi-line arrays with trailing commas", () => {
+      const content = `
+[project]
+name = "multiline"
+version = "1.0.0"
+dependencies = [
+  "requests>=2.20",
+  "flask==3.0.0",
+]
+`;
+      const result = parsePyprojectDependencies(content);
+      expect(result.dependencies.get("requests")).toBe(">=2.20");
+      expect(result.dependencies.get("flask")).toBe("3.0.0");
+    });
+
+    it("returns empty maps for malformed TOML instead of throwing", () => {
+      const result = parsePyprojectDependencies(`
+[project
+name = "broken"
+dependencies = [
+  "requests>=2.20",
+`);
+      expect(result.name).toBeUndefined();
+      expect(result.version).toBeUndefined();
+      expect(result.dependencies.size).toBe(0);
+      expect(result.devDependencies.size).toBe(0);
     });
   });
 });
