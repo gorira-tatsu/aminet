@@ -74,7 +74,7 @@ runs:
           ARGS="$ARGS --no-dev"
         fi
         if [ -n "${{ inputs.exclude-packages }}" ]; then
-          ARGS="$ARGS --exclude-packages '${{ inputs.exclude-packages }}'"
+          ARGS="$ARGS --exclude-packages ${{ inputs.exclude-packages }}"
         fi
 
         if [ -n "$VERSION" ]; then
