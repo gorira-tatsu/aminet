@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { analyzeCommand } from "./cli/commands/analyze.js";
 import { cacheClearCommand, cachePruneCommand, cacheStatsCommand } from "./cli/commands/cache.js";
+import { initCommand } from "./cli/commands/init.js";
 import { reviewCommand } from "./cli/commands/review.js";
 
 const program = new Command();
@@ -64,7 +65,10 @@ program
   .option("--provenance", "Check npm provenance attestations")
   .option("--pinning", "Analyze version pinning strategy")
   // Private package support
-  .option("--exclude-packages <list>", "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)")
+  .option(
+    "--exclude-packages <list>",
+    "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)",
+  )
   .option("--npm-token <token>", "npm auth token for private registries")
   .action(analyzeCommand);
 
@@ -102,11 +106,23 @@ program
   .option("--dev", "Include devDependencies")
   .option("--no-cache", "Skip cache reads")
   .option("--security", "Enable security deep analysis")
-  .option("--exclude-packages <list>", "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)")
+  .option(
+    "--exclude-packages <list>",
+    "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)",
+  )
   .option("--npm-token <token>", "npm auth token for private registries")
   .option("-v, --verbose", "Verbose logging")
   .option("--ci", "CI mode (no spinner)")
   .action(reviewCommand);
+
+// init command
+program
+  .command("init")
+  .description("Generate aminet.config.json interactively")
+  .option("--defaults", "Use default values (non-interactive)")
+  .option("--force", "Overwrite existing config (use with --defaults)")
+  .option("--merge", "Merge with existing config (use with --defaults)")
+  .action(initCommand);
 
 // cache commands
 const cache = program.command("cache").description("Manage the local cache");
