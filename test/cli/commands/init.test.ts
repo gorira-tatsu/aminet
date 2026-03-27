@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildDefaultConfig, mergeConfigs } from "../../../src/cli/commands/init.js";
+import {
+  buildDefaultConfig,
+  mergeConfigs,
+  parseBooleanInput,
+} from "../../../src/cli/commands/init.js";
 
 describe("init command helpers", () => {
   describe("buildDefaultConfig", () => {
@@ -48,6 +52,29 @@ describe("init command helpers", () => {
       const merged = mergeConfigs(existing, defaults);
 
       expect(merged.npmToken).toBe("tok_123");
+    });
+  });
+
+  describe("parseBooleanInput", () => {
+    it("accepts common truthy values", () => {
+      expect(parseBooleanInput("y", false)).toBe(true);
+      expect(parseBooleanInput("YES", false)).toBe(true);
+      expect(parseBooleanInput("1", false)).toBe(true);
+    });
+
+    it("accepts common falsy values", () => {
+      expect(parseBooleanInput("n", true)).toBe(false);
+      expect(parseBooleanInput("No", true)).toBe(false);
+      expect(parseBooleanInput("0", true)).toBe(false);
+    });
+
+    it("falls back on empty input", () => {
+      expect(parseBooleanInput("", true)).toBe(true);
+      expect(parseBooleanInput("   ", false)).toBe(false);
+    });
+
+    it("rejects unrecognized input", () => {
+      expect(parseBooleanInput("maybe", true)).toBeNull();
     });
   });
 });

@@ -100,6 +100,28 @@ export function mergeConfigs(existing: AmiConfig, defaults: AmiConfig): AmiConfi
   return merged;
 }
 
+function formatDefaultHint(value: unknown): string {
+  if (value === undefined) return "";
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(",") : "";
+  }
+  return String(value);
+}
+
+export function parseBooleanInput(input: string, fallback: boolean): boolean | null {
+  const trimmed = input.trim();
+  if (trimmed === "") return fallback;
+
+  const normalized = trimmed.toLowerCase();
+  if (["y", "yes", "true", "1"].includes(normalized)) {
+    return true;
+  }
+  if (["n", "no", "false", "0"].includes(normalized)) {
+    return false;
+  }
+  return null;
+}
+
 function formatConfig(config: AmiConfig, redactSecrets = true): string {
   // Remove fields with empty arrays or undefined values for cleaner output
   const clean: Record<string, unknown> = {};
@@ -199,6 +221,7 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
             ),
           );
           console.error(chalk.dim("  Fix or remove the existing config file and try again."));
+          process.exitCode = 1;
           return;
         }
       }
@@ -207,28 +230,28 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
     const config: AmiConfig = {};
 
     for (const field of CONFIG_FIELDS) {
-      const defaultStr =
-        field.defaultValue === undefined
-          ? ""
-          : Array.isArray(field.defaultValue)
-            ? ""
-            : String(field.defaultValue);
+      const promptDefault = existingConfig?.[field.key] ?? field.defaultValue;
+      const defaultStr = promptDefault === undefined ? "" : formatDefaultHint(promptDefault);
       const hint = field.hint ? chalk.dim(` (${field.hint})`) : "";
       const defaultHint = defaultStr ? chalk.dim(` [${defaultStr}]`) : "";
 
-      const answer = await rl.question(`  ${field.prompt}${hint}${defaultHint}: `);
-      const trimmed = answer.trim();
-
       if (field.type === "boolean") {
-        const val =
-          trimmed === ""
-            ? field.defaultValue
-            : ["y", "yes", "true"].includes(trimmed.toLowerCase());
-        (config as Record<string, unknown>)[field.key] = val;
+        while (true) {
+          const answer = await rl.question(`  ${field.prompt}${hint}${defaultHint}: `);
+          const fallback = Boolean(promptDefault);
+          const parsed = parseBooleanInput(answer, fallback);
+          if (parsed !== null) {
+            (config as Record<string, unknown>)[field.key] = parsed;
+            break;
+          }
+          console.log(chalk.yellow("  Enter y/yes/true/1 or n/no/false/0."));
+        }
       } else if (field.type === "number") {
+        const answer = await rl.question(`  ${field.prompt}${hint}${defaultHint}: `);
+        const trimmed = answer.trim();
         if (trimmed === "") {
-          if (field.defaultValue !== undefined) {
-            (config as Record<string, unknown>)[field.key] = field.defaultValue;
+          if (promptDefault !== undefined) {
+            (config as Record<string, unknown>)[field.key] = promptDefault;
           }
         } else {
           const num = parseInt(trimmed, 10);
@@ -237,14 +260,24 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
           }
         }
       } else if (field.type === "string[]") {
+        const answer = await rl.question(`  ${field.prompt}${hint}${defaultHint}: `);
+        const trimmed = answer.trim();
         if (trimmed) {
           (config as Record<string, unknown>)[field.key] = trimmed
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean);
+        } else if (Array.isArray(promptDefault) && promptDefault.length > 0) {
+          (config as Record<string, unknown>)[field.key] = [...promptDefault];
         }
       } else {
-        (config as Record<string, unknown>)[field.key] = trimmed || field.defaultValue;
+        const answer = await rl.question(`  ${field.prompt}${hint}${defaultHint}: `);
+        const trimmed = answer.trim();
+        if (trimmed) {
+          (config as Record<string, unknown>)[field.key] = trimmed;
+        } else if (promptDefault !== undefined) {
+          (config as Record<string, unknown>)[field.key] = promptDefault;
+        }
       }
     }
 
