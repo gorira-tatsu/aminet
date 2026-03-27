@@ -46,7 +46,7 @@ Search the web for authoritative guidance. Prioritize sources in this order:
 3. **Reputable technical blogs** — posts from recognized experts or organizations, with concrete code examples
 4. **GitHub discussions/issues** — real-world problems and solutions from popular repositories
 
-```
+```text
 WebSearch: "<specific query>"
 WebFetch: "<most relevant result URL>"
 ```
@@ -65,7 +65,7 @@ git log --oneline -20 --all --grep="<topic keyword>"
 ```
 
 Search source and test files for relevant patterns:
-```
+```text
 Grep: "<pattern related to topic>"
 Glob: "src/**/*<keyword>*"
 ```
@@ -90,7 +90,7 @@ Identify any conflicts between external best practices and the project's existin
 
 Use this exact output format:
 
-```
+```markdown
 ## Research: <Topic>
 
 ### Summary

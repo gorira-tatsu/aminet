@@ -204,6 +204,7 @@ function computeSummary(
   resolvedVulnerabilities: VulnChange[],
   newSecuritySignals: DependencyDiff["newSecuritySignals"],
   resolvedSecuritySignals: DependencyDiff["resolvedSecuritySignals"],
+  skippedCount = 0,
 ): DiffSummary {
   const newVulnCount = newVulnerabilities.reduce((sum, v) => sum + v.vulnerabilities.length, 0);
   const resolvedVulnCount = resolvedVulnerabilities.reduce(
@@ -243,7 +244,7 @@ function computeSummary(
     riskLevel = "high";
   } else if (newVulnCount > 0 || newSecuritySignalCount > 0 || licenseChanged.length > 0) {
     riskLevel = "medium";
-  } else if (added.length > 0 || updated.length > 0) {
+  } else if (skippedCount > 0 || added.length > 0 || updated.length > 0) {
     riskLevel = "low";
   }
 
@@ -251,7 +252,7 @@ function computeSummary(
     addedCount: added.length,
     removedCount: removed.length,
     updatedCount: updated.length,
-    skippedCount: 0,
+    skippedCount,
     newVulnCount,
     resolvedVulnCount,
     licenseChangeCount: licenseChanged.length,

@@ -122,7 +122,7 @@ Reply guidelines:
 
 Summarize what was done:
 
-```
+```md
 ## Review Response Summary
 
 ### Applied fixes

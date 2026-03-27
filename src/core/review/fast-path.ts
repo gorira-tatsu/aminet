@@ -404,7 +404,7 @@ function computeSummary(
     riskLevel = "high";
   } else if (newVulnCount > 0 || newSecuritySignalCount > 0 || licenseChanged.length > 0) {
     riskLevel = "medium";
-  } else if (added.length > 0 || updated.length > 0) {
+  } else if (skippedCount > 0 || added.length > 0 || updated.length > 0) {
     riskLevel = "low";
   }
 

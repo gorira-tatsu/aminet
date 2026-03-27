@@ -2,7 +2,7 @@
 name: release
 description: Merge stg into main, bump version, tag, and trigger the npm publish workflow. Use this skill when the user says "/release", asks to "release a new version", "merge stg to main", "cut a release", "publish to npm", or wants to create a new release. Also triggers for "ship it", "deploy to production", or "tag a release".
 argument-hint: "[--version <semver>] [--dry-run] — e.g., --version 0.2.0, or omit for auto-detection"
-allowed-tools: [Read, Glob, Grep, Edit, Bash(gh pr:*), Bash(gh api:*), Bash(gh run:*), Bash(git log:*), Bash(git diff:*), Bash(git status:*), Bash(git branch:*), Bash(git tag:*), Bash(git checkout:*), Bash(git merge:*), Bash(git push:*), Bash(git fetch:*), Bash(pnpm build:*), Bash(pnpm test:*), Bash(pnpm lint:*)]
+allowed-tools: [Read, Glob, Grep, Edit, Bash(gh pr:*), Bash(gh api:*), Bash(gh run:*), Bash(git log:*), Bash(git diff:*), Bash(git status:*), Bash(git branch:*), Bash(git tag:*), Bash(git checkout:*), Bash(git merge:*), Bash(git push:*), Bash(git fetch:*), Bash(git pull:*), Bash(node:*), Bash(pnpm build:*), Bash(pnpm test:*), Bash(pnpm lint:*)]
 ---
 
 # Release Manager
@@ -87,7 +87,7 @@ git log --format="- %s (%h)" origin/main..origin/stg
 
 Group into categories:
 
-```
+```md
 ### Features
 - feat: add Python package support (f097758)
 - feat: include devDependencies by default (abc1234)
@@ -104,7 +104,7 @@ Group into categories:
 
 Present a release summary and **ask for explicit confirmation**:
 
-```
+```md
 ## Release Preview
 
 **Version**: 0.1.3 → 0.2.0
@@ -151,10 +151,7 @@ Commit the version bump:
 
 ```bash
 git add package.json
-git commit -m "chore: bump version to <new-version>
-
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
-
+git commit -m "chore: bump version to <new-version>"
 git push origin stg
 ```
 
@@ -172,7 +169,16 @@ If fast-forward is not possible (main has diverged), **stop and warn the user**.
 git push origin main
 ```
 
-### Step 7: Tag and push
+### Step 7: Ensure no active publish workflow
+
+```bash
+gh run list --workflow=publish.yml --limit=20 --json status,conclusion,url \
+  --jq '.[] | select(.status != "completed")'
+```
+
+If any run is still in progress, stop and ask the user whether to wait before tagging.
+
+### Step 8: Tag and push
 
 ```bash
 git tag -a "v<new-version>" -m "Release v<new-version>"
@@ -184,7 +190,7 @@ This triggers the `publish.yml` workflow which will:
 2. Publish to npm with provenance
 3. Create a GitHub Release with auto-generated notes
 
-### Step 8: Report results
+### Step 9: Report results
 
 Wait briefly for the workflow to start, then report:
 
@@ -193,7 +199,7 @@ Wait briefly for the workflow to start, then report:
 gh run list --workflow=publish.yml --limit=1 --json databaseId,status,conclusion,url
 ```
 
-```
+```md
 ## Release Summary
 
 **Version**: v<new-version>

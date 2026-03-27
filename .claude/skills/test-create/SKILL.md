@@ -209,7 +209,7 @@ Fix formatting issues if any.
 
 ### Step 8: Report results
 
-```
+```md
 ## Test Creation Summary
 
 ### Created

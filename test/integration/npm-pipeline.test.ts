@@ -98,8 +98,10 @@ describe("npm pipeline: express", () => {
     });
 
     const resolvedNames = (resolveDependencyGraph as any).mock.calls.map((c: unknown[]) => c[0]);
+    expect(resolveDependencyGraph).toHaveBeenCalledTimes(Object.keys(pkg.dependencies).length - 2);
     expect(resolvedNames).not.toContain("body-parser");
     expect(resolvedNames).not.toContain("cookie");
+    expect(resolvedNames).toContain("send");
   });
 });
 

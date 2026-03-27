@@ -2,7 +2,7 @@
 name: merge-review
 description: Review a PR's merge readiness for the stg branch. Use this skill when the user says "/merge-review", asks to "check if this PR is ready to merge", "review for stg", "pre-merge check", or wants to validate a PR meets all quality gates before merging into stg. Also triggers for "is this ready to merge" or "merge checklist".
 argument-hint: "[PR number] — omit to use the current branch's PR"
-allowed-tools: [Read, Glob, Grep, Bash(gh pr:*), Bash(gh api:*), Bash(git log:*), Bash(git diff:*), Bash(git status:*), Bash(git branch:*)]
+allowed-tools: [Read, Glob, Grep, Bash(grep:*), Bash(gh pr:*), Bash(gh api:*), Bash(git log:*), Bash(git diff:*), Bash(git status:*), Bash(git branch:*)]
 ---
 
 # Merge Readiness Reviewer
@@ -40,10 +40,10 @@ If the PR targets another branch (e.g., a feature branch), proceed but note it i
 gh pr checks <PR> --json name,state,conclusion
 ```
 
-Verify all required checks have passed:
-- **Lint & Format** — must pass
-- **Typecheck** — must pass
-- **Test** — must pass
+Verify all required checks have passed. Match by category rather than exact job name:
+- **Lint & Format** — any check name matching `lint` or `format`
+- **Typecheck** — any check name matching `typecheck`, `tsc`, or `build` when the job is dedicated to type validation
+- **Test** — any check name matching `test`
 
 If CI hasn't run yet (pending), note it as "pending" rather than "fail".
 
@@ -103,7 +103,7 @@ If the branch is behind `stg`, note that a rebase/merge is needed.
 
 Present the results in this format:
 
-```
+```markdown
 ## Merge Review: PR #<number> — <title>
 
 **Branch**: `<head>` → `<base>`

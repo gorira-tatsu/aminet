@@ -97,7 +97,7 @@ This ensures the skill is idempotent — safe to run repeatedly without spamming
 
 Show the user which issues were notified and whether each was a new comment or an update:
 
-```
+```text
 Notified issues:
 - #5 — <issue title> (new comment)
 - #6 — <issue title> (updated existing)

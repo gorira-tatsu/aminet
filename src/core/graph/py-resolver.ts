@@ -185,7 +185,7 @@ function parseDependencies(requiresDist: string[] | null): Map<string, string> {
     if (!parsed) continue;
 
     if (parsed.hasMarker) {
-      logger.warn(`Skipping dependency with environment marker: ${spec}`);
+      logger.debug(`Skipping dependency with environment marker: ${spec}`);
       continue;
     }
 

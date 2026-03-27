@@ -13,7 +13,7 @@ export function parseExcludePackages(cliOption?: string, configOption?: string[]
     );
   }
   if (configOption) {
-    patterns.push(...configOption);
+    patterns.push(...configOption.map((s) => s.trim()).filter(Boolean));
   }
   return [...new Set(patterns)];
 }

@@ -25,7 +25,7 @@ import {
 vi.mock("../../src/core/graph/py-resolver.js", () => ({
   resolvePythonDependencyGraph: vi
     .fn()
-    .mockImplementation(async (name: string, version: string) => ({
+    .mockImplementation(async (name: string, _version: string) => ({
       root: `${name}@1.0.0`,
       nodes: new Map([
         [
