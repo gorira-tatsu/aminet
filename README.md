@@ -59,6 +59,7 @@ Common inputs:
 
 - `path`: manifest path, usually `package.json`
 - `depth`: maximum dependency depth to resolve
+- `dev`: include devDependencies in review (default: `"true"`)
 - `deny-license`: comma-separated SPDX IDs to block
 - `fail-on-vuln`: fail the job at or above a severity threshold
 - `security`: enable deeper security checks
@@ -137,10 +138,11 @@ Analyze a local project:
 npx aminet analyze package.json --security --enhanced-license --json
 ```
 
-Review dependency changes in a branch:
+Review dependency changes in a branch (includes devDependencies by default):
 
 ```bash
 npx aminet review package.json --base HEAD~1 --security
+npx aminet review package.json --base HEAD~1 --no-dev  # exclude devDependencies
 ```
 
 Review with private packages (skip or authenticate):
