@@ -59,6 +59,7 @@ Common inputs:
 
 - `path`: manifest path, usually `package.json`
 - `depth`: maximum dependency depth to resolve
+- `dev`: include devDependencies in review (default: `"true"`)
 - `deny-license`: comma-separated SPDX IDs to block
 - `fail-on-vuln`: fail the job at or above a severity threshold
 - `security`: enable deeper security checks
@@ -145,10 +146,11 @@ npx aminet analyze pyproject.toml
 npx aminet analyze requests --ecosystem pypi
 ```
 
-Review dependency changes in a branch:
+Review dependency changes in a branch (includes devDependencies by default):
 
 ```bash
 npx aminet review package.json --base HEAD~1 --security
+npx aminet review package.json --base HEAD~1 --no-dev  # exclude devDependencies
 ```
 
 Review with private packages (skip or authenticate):
@@ -156,6 +158,15 @@ Review with private packages (skip or authenticate):
 ```bash
 npx aminet review package.json --base HEAD~1 --exclude-packages "@scope/*"
 NPM_TOKEN=xxx npx aminet review package.json --base HEAD~1
+```
+
+Generate a config file interactively:
+
+```bash
+npx aminet init                    # interactive prompts
+npx aminet init --defaults         # non-interactive with sensible defaults
+npx aminet init --defaults --merge # merge defaults into existing config
+npx aminet init --defaults --force # overwrite existing config
 ```
 
 Cache maintenance:
@@ -172,6 +183,7 @@ Top-level commands:
 - `analyze`: dependency graph analysis for packages or local manifests
 - `ci`: JSON-oriented CI alias for `analyze`
 - `review`: PR review mode for direct dependency changes
+- `init`: generate `aminet.config.json` interactively
 - `cache`: local cache inspection and pruning
 
 Use the built-in help for the complete option set:

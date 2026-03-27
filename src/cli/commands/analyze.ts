@@ -284,7 +284,7 @@ async function analyzePythonFile(
   let packageName = fileBaseName;
   let packageVersion = "0.0.0";
 
-  if (fileBaseName === "pyproject.toml" || filePath.endsWith("pyproject.toml")) {
+  if (fileBaseName === "pyproject.toml") {
     const parsed = parsePyprojectDependencies(content);
     deps = new Map(parsed.dependencies);
     packageName = parsed.name ?? fileBaseName;
@@ -346,7 +346,7 @@ async function analyzePackage(
   options: AnalyzeOptions,
   config: AmiConfig,
   useSpinner: boolean,
-  ecosystem = "npm",
+  ecosystem: "npm" | "pypi" = "npm",
 ): Promise<void> {
   // Phase 1: Resolve dependency graph
   const spinner = useSpinner

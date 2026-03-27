@@ -23,13 +23,18 @@ This rule is non-negotiable regardless of the user's language.
 
 The user invoked this with: $ARGUMENTS
 
+Compute the diff base before any branch-specific handling so it is always available later:
+
+```bash
+BASE=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD origin/master 2>/dev/null || echo "HEAD~5")
+```
+
 ## How to determine what to document
 
 1. **If a target is specified** (e.g., `README`, `CONTRIBUTING`, `API`), focus on that file
 2. **If no target**, auto-detect what needs updating:
    - Determine the diff base: find the merge-base with the default branch rather than using a fixed `HEAD~N`. This stays accurate regardless of branch age or merge strategy.
      ```bash
-     BASE=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD origin/master 2>/dev/null || echo "HEAD~5")
      git diff --name-only "$BASE"
      ```
    - Check which source files changed and whether docs cover those areas

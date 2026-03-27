@@ -19,6 +19,9 @@ inputs:
   security:
     description: "Enable security deep analysis"
     default: "true"
+  dev:
+    description: "Include devDependencies in review (default: true)"
+    default: "true"
   exclude-packages:
     description: "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)"
     required: false
@@ -33,7 +36,7 @@ runs:
   using: "composite"
   steps:
     - name: Setup Node.js
-      uses: actions/setup-node@v5
+      uses: actions/setup-node@v6
       with:
         node-version: "20"
 
@@ -50,39 +53,45 @@ runs:
         ACTION_REF="$GITHUB_ACTION_REF"
         LOCAL_ENTRY="$ACTION_PATH/dist/index.js"
 
-        ARGS="${{ inputs.path }} --base ${{ github.event.pull_request.base.sha }}"
-        ARGS="$ARGS --pr-number ${{ github.event.pull_request.number }}"
-        ARGS="$ARGS --repo ${{ github.repository }}"
-        ARGS="$ARGS --update-comment"
+        ARGS=(
+          "${{ inputs.path }}"
+          "--base" "${{ github.event.pull_request.base.sha }}"
+          "--pr-number" "${{ github.event.pull_request.number }}"
+          "--repo" "${{ github.repository }}"
+          "--update-comment"
+        )
 
         if [ -n "${{ inputs.depth }}" ]; then
-          ARGS="$ARGS --depth ${{ inputs.depth }}"
+          ARGS+=("--depth" "${{ inputs.depth }}")
         fi
         if [ -n "${{ inputs.deny-license }}" ]; then
-          ARGS="$ARGS --deny-license ${{ inputs.deny-license }}"
+          ARGS+=("--deny-license" "${{ inputs.deny-license }}")
         fi
         if [ -n "${{ inputs.fail-on-vuln }}" ]; then
-          ARGS="$ARGS --fail-on-vuln ${{ inputs.fail-on-vuln }}"
+          ARGS+=("--fail-on-vuln" "${{ inputs.fail-on-vuln }}")
         fi
         if [ "${{ inputs.security }}" = "true" ]; then
-          ARGS="$ARGS --security"
+          ARGS+=("--security")
+        fi
+        if [ "${{ inputs.dev }}" = "false" ]; then
+          ARGS+=("--no-dev")
         fi
         if [ -n "${{ inputs.exclude-packages }}" ]; then
-          ARGS="$ARGS --exclude-packages '${{ inputs.exclude-packages }}'"
+          ARGS+=("--exclude-packages" "${{ inputs.exclude-packages }}")
         fi
 
         if [ -n "$VERSION" ]; then
-          npx --yes aminet@"$VERSION" review $ARGS
+          npx --yes aminet@"$VERSION" review "${ARGS[@]}"
           exit 0
         fi
 
         if [ -n "$ACTION_REF" ] && [[ "$ACTION_REF" == v* ]]; then
-          npx --yes aminet@"${ACTION_REF#v}" review $ARGS
+          npx --yes aminet@"${ACTION_REF#v}" review "${ARGS[@]}"
           exit 0
         fi
 
         if [ -f "$LOCAL_ENTRY" ]; then
-          node "$LOCAL_ENTRY" review $ARGS
+          node "$LOCAL_ENTRY" review "${ARGS[@]}"
           exit 0
         fi
 
