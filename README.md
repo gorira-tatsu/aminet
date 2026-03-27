@@ -64,8 +64,20 @@ Common inputs:
 - `fail-on-vuln`: fail the job at or above a severity threshold
 - `security`: enable deeper security checks
 - `version`: pin the published `aminet` CLI version explicitly
+- `lockfile-path`: explicit path to lockfile (for monorepos)
 - `exclude-packages`: comma-separated packages to skip (supports wildcards like `@scope/*`)
 - `npm-token`: npm auth token for private registry access
+
+For monorepo usage where `package.json` is in a sub-package:
+
+```yaml
+      - uses: gorira-tatsu/aminet@v0.1.3
+        with:
+          path: packages/frontend/package.json
+          lockfile-path: pnpm-lock.yaml
+```
+
+The review command automatically walks up parent directories to find lockfiles and reads the correct workspace section from pnpm lockfiles. Use `lockfile-path` when auto-detection does not work for your layout.
 
 For repository-local usage during development:
 

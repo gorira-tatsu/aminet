@@ -107,6 +107,7 @@ program
   .option("--no-dev", "Exclude devDependencies from review")
   .option("--no-cache", "Skip cache reads")
   .option("--security", "Enable security deep analysis")
+  .option("--lockfile-path <path>", "Explicit path to lockfile (for monorepos)")
   .option(
     "--exclude-packages <list>",
     "Comma-separated packages to skip (supports wildcards, e.g., @scope/*)",

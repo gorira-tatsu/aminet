@@ -19,6 +19,9 @@ inputs:
   security:
     description: "Enable security deep analysis"
     default: "true"
+  lockfile-path:
+    description: "Explicit path to lockfile (for monorepos)"
+    required: false
   dev:
     description: "Include devDependencies in review (default: true)"
     default: "true"
@@ -72,6 +75,12 @@ runs:
         fi
         if [ "${{ inputs.security }}" = "true" ]; then
           ARGS+=("--security")
+        fi
+        if [ -n "${{ inputs.lockfile-path }}" ]; then
+          ARGS+=("--lockfile-path" "${{ inputs.lockfile-path }}")
+        fi
+        if [ -n "${{ inputs.lockfile-path }}" ]; then
+          ARGS+=("--lockfile-path" "${{ inputs.lockfile-path }}")
         fi
         if [ "${{ inputs.dev }}" = "false" ]; then
           ARGS+=("--no-dev")
