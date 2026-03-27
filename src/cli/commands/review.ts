@@ -16,6 +16,7 @@ import {
 } from "../../core/review/fast-path.js";
 import { getDatabase } from "../../core/store/database.js";
 import { mapConcurrent } from "../../utils/concurrency.js";
+import { isExcludedPackage, parseExcludePackages } from "../../utils/exclude.js";
 import { fetchWithRetry } from "../../utils/http.js";
 import { logger, setLogLevel } from "../../utils/logger.js";
 import { runCommand } from "../../utils/process.js";
@@ -45,7 +46,7 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
   const config = loadConfig(dirname(target));
 
   // Set npm token: CLI option > env var > config
-  const resolvedNpmToken = options.npmToken ?? config.npmToken;
+  const resolvedNpmToken = options.npmToken ?? process.env.NPM_TOKEN ?? config.npmToken;
   if (resolvedNpmToken) {
     setNpmToken(resolvedNpmToken);
   }
@@ -323,29 +324,3 @@ async function postOrUpdateComment(
     logger.debug("Created new PR comment");
   }
 }
-
-function parseExcludePackages(
-  cliOption?: string,
-  configOption?: string[],
-): string[] {
-  const patterns: string[] = [];
-  if (cliOption) {
-    patterns.push(...cliOption.split(",").map((s) => s.trim()).filter(Boolean));
-  }
-  if (configOption) {
-    patterns.push(...configOption);
-  }
-  return [...new Set(patterns)];
-}
-
-function isExcludedPackage(name: string, patterns: string[]): boolean {
-  return patterns.some((pattern) => {
-    if (pattern.includes("*")) {
-      const regex = new RegExp(`^${pattern.replace(/\*/g, ".*")}$`);
-      return regex.test(name);
-    }
-    return name === pattern;
-  });
-}
-
-export { isExcludedPackage, parseExcludePackages };

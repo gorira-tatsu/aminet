@@ -1,3 +1,4 @@
+import { isExcludedPackage } from "../utils/exclude.js";
 import { logger } from "../utils/logger.js";
 import { runAnalysisPhases } from "./analysis/phases.js";
 import { resolveDependencyGraph } from "./graph/resolver.js";
@@ -72,12 +73,7 @@ export async function buildReportFromPackageJson(
   const excludeList = options.excludePackages ?? [];
   const depEntries = Object.entries(allDeps).filter(([name]) => {
     if (excludeList.length === 0) return true;
-    return !excludeList.some((pattern) => {
-      if (pattern.includes("*")) {
-        return new RegExp(`^${pattern.replace(/\*/g, ".*")}$`).test(name);
-      }
-      return name === pattern;
-    });
+    return !isExcludedPackage(name, excludeList);
   });
   const rootId = pkg.name ? `${pkg.name}@${pkg.version ?? "0.0.0"}` : "root@0.0.0";
 

@@ -123,7 +123,7 @@ export function buildReviewDiff(
     if (
       (change.changeType === "added" && !head) ||
       (change.changeType === "removed" && !base) ||
-      (change.changeType === "updated" && !head)
+      (change.changeType === "updated" && (!base || !head))
     ) {
       skippedCount++;
     }
