@@ -69,6 +69,7 @@ export function parseRequirementsManifest(content: string): ParsedPythonManifest
  * - [project.optional-dependencies]
  * - [dependency-groups]
  * - [tool.poetry.dependencies]
+ * - [tool.poetry.dev-dependencies]
  * - [tool.poetry.group.<name>.dependencies]
  */
 export function parsePyprojectDependencies(content: string): {
@@ -112,6 +113,7 @@ export function parsePyprojectManifest(content: string): ParsedPythonManifest {
   }
 
   parsePoetryDependencySection(content, "tool.poetry.dependencies", dependencies, skipped);
+  parsePoetryDependencySection(content, "tool.poetry.dev-dependencies", devDependencies, skipped);
   for (const group of DEV_LIKE_GROUPS) {
     parsePoetryDependencySection(
       content,
@@ -266,9 +268,9 @@ function collectBestEffortDependencies(packages: Map<string, string>): string[] 
 }
 
 function isBestEffortVersionSpec(versionSpec: string): boolean {
-  const trimmed = versionSpec.trim();
+  const trimmed = normalizePythonVersionSpec(versionSpec).trim();
   if (trimmed === "" || trimmed.toLowerCase() === "latest") return true;
-  return !/^\d+(\.\d+){0,2}([A-Za-z0-9._+-]+)?$/.test(trimmed);
+  return !/^\d+(?:\.\d+)*(?:[A-Za-z0-9._+-]+)?$/.test(trimmed);
 }
 
 function normalizePythonVersionSpec(versionSpec: string): string {

@@ -20,7 +20,7 @@ export interface LockfileResult {
 }
 
 /**
- * Try to find and parse a lockfile adjacent to the given package.json path.
+ * Try to find and parse a lockfile adjacent to the given manifest path.
  * Returns null if no lockfile found.
  */
 export async function tryParseLockfile(
@@ -241,7 +241,7 @@ function parsePythonPackageLock(
 ): LockfileResult | null {
   try {
     const packages = new Map<string, string>();
-    const blocks = content.split(/\n(?=\[\[package\]\])/g);
+    const blocks = content.split(/\r?\n(?=\[\[package\]\])/g);
 
     for (const block of blocks) {
       if (!block.includes("[[package]]")) continue;

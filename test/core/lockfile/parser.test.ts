@@ -213,5 +213,15 @@ version = "2.11.7"
       expect(result!.format).toBe("uv.lock");
       expect(result!.packages.get("pydantic")).toBe("2.11.7");
     });
+
+    it("parses CRLF-separated Python lockfiles", () => {
+      const result = parseLockfile(
+        "poetry.lock",
+        '[[package]]\r\nname = "fastapi"\r\nversion = "0.116.1"\r\n\r\n[[package]]\r\nname = "pydantic"\r\nversion = "2.11.7"\r\n',
+      );
+      expect(result).not.toBeNull();
+      expect(result!.packages.get("fastapi")).toBe("0.116.1");
+      expect(result!.packages.get("pydantic")).toBe("2.11.7");
+    });
   });
 });

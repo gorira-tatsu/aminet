@@ -379,7 +379,7 @@ function getReviewLockfileNames(ecosystem: "npm" | "pypi"): string[] {
 }
 
 export async function loadAdjacentLockfile(
-  packageJsonPath: string,
+  manifestPath: string,
   ref?: string,
   explicitLockfilePath?: string,
   ecosystem: "npm" | "pypi" = "npm",
@@ -388,7 +388,7 @@ export async function loadAdjacentLockfile(
     ref = undefined;
   }
 
-  const pkgDir = resolve(dirname(packageJsonPath));
+  const manifestDir = resolve(dirname(manifestPath));
 
   const gitRoot = await findGitRoot();
 
@@ -399,7 +399,7 @@ export async function loadAdjacentLockfile(
       const gitRelativePath = ref ? toGitRelativePath(absPath, gitRoot) : explicitLockfilePath;
       const content = await loadFileAtRefOrPath(gitRelativePath, ref);
       const lockfileDir = resolve(dirname(explicitLockfilePath));
-      const workspacePath = computeWorkspacePath(lockfileDir, pkgDir);
+      const workspacePath = computeWorkspacePath(lockfileDir, manifestDir);
       const parsed = parseLockfile(explicitLockfilePath, content, workspacePath);
       if (parsed && parsed.packages.size > 0) {
         return parsed;
@@ -414,8 +414,8 @@ export async function loadAdjacentLockfile(
     return null;
   }
 
-  // Walk up from package.json directory, stopping at git root
-  let dir = pkgDir;
+  // Walk up from the manifest directory, stopping at git root
+  let dir = manifestDir;
 
   while (true) {
     for (const lockfileName of getReviewLockfileNames(ecosystem)) {
@@ -423,7 +423,7 @@ export async function loadAdjacentLockfile(
       const gitRelativeCandidate = ref ? toGitRelativePath(candidate, gitRoot) : candidate;
       try {
         const content = await loadFileAtRefOrPath(gitRelativeCandidate, ref);
-        const workspacePath = computeWorkspacePath(dir, pkgDir);
+        const workspacePath = computeWorkspacePath(dir, manifestDir);
         const parsed = parseLockfile(candidate, content, workspacePath);
         if (parsed && parsed.packages.size > 0) {
           return parsed;

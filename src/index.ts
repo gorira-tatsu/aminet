@@ -19,7 +19,7 @@ program
   .description("Analyze dependencies, licenses, and vulnerabilities")
   .argument(
     "<package>",
-    "Package (e.g., express@4.21.2) or file path (package.json, pyproject.toml, poetry.lock)",
+    "Package (e.g., express@4.21.2) or file path (package.json, requirements.txt, pyproject.toml, poetry.lock, pdm.lock, uv.lock)",
   )
   .option("--json", "Output as JSON")
   .option("--tree", "Output as dependency tree")

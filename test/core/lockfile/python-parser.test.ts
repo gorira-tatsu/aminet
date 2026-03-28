@@ -205,5 +205,29 @@ ruff = { version = "==0.12.0" }
         },
       ]);
     });
+
+    it("parses legacy Poetry dev-dependencies", () => {
+      const result = parsePyprojectManifest(`
+[tool.poetry]
+name = "legacy-poetry"
+version = "1.0.0"
+
+[tool.poetry.dependencies]
+fastapi = "^0.116.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^8.4.0"
+black = "25.1.0"
+`);
+
+      expect(result.dependencies.get("fastapi")).toBe("^0.116.0");
+      expect(result.devDependencies.get("pytest")).toBe("^8.4.0");
+      expect(result.devDependencies.get("black")).toBe("25.1.0");
+    });
+
+    it("does not mark four-part pinned versions as best-effort", () => {
+      const result = parseRequirementsManifest("demo==1.2.3.4\n");
+      expect(result.bestEffortDependencies).toEqual([]);
+    });
   });
 });
