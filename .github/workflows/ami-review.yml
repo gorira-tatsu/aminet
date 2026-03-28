@@ -4,9 +4,14 @@ on:
   pull_request:
     paths:
       - "package.json"
+      - "requirements.txt"
+      - "pyproject.toml"
       - "pnpm-lock.yaml"
       - "package-lock.json"
       - "bun.lock"
+      - "poetry.lock"
+      - "pdm.lock"
+      - "uv.lock"
 
 permissions:
   pull-requests: write
@@ -31,7 +36,62 @@ jobs:
 
       - run: pnpm build
 
-      - uses: ./
+      - id: detect-manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+          manifest_path=""
+          lockfile_path=""
+
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+
+            case "$file" in
+              */package.json|package.json|*/requirements.txt|requirements.txt|*/pyproject.toml|pyproject.toml)
+                manifest_path="$file"
+                break
+                ;;
+              */pnpm-lock.yaml|pnpm-lock.yaml|*/package-lock.json|package-lock.json|*/bun.lock|bun.lock)
+                dir="$(dirname "$file")"
+                candidate="$dir/package.json"
+                if [ "$dir" = "." ]; then
+                  candidate="package.json"
+                fi
+                if [ -f "$candidate" ]; then
+                  manifest_path="$candidate"
+                  lockfile_path="$file"
+                  break
+                fi
+                ;;
+              */poetry.lock|poetry.lock|*/pdm.lock|pdm.lock|*/uv.lock|uv.lock)
+                dir="$(dirname "$file")"
+                candidate="$dir/pyproject.toml"
+                if [ "$dir" = "." ]; then
+                  candidate="pyproject.toml"
+                fi
+                if [ -f "$candidate" ]; then
+                  manifest_path="$candidate"
+                  lockfile_path="$file"
+                  break
+                fi
+                ;;
+            esac
+          done <<< "$changed_files"
+
+          echo "path=$manifest_path" >> "$GITHUB_OUTPUT"
+          echo "lockfile-path=$lockfile_path" >> "$GITHUB_OUTPUT"
+
+      - if: steps.detect-manifest.outputs.path == ''
+        shell: bash
+        run: |
+          echo "No supported dependency manifest found for review."
+          exit 0
+
+      - if: steps.detect-manifest.outputs.path != ''
+        uses: ./
         with:
-          path: package.json
+          path: ${{ steps.detect-manifest.outputs.path }}
+          lockfile-path: ${{ steps.detect-manifest.outputs.lockfile-path }}
           security: "true"

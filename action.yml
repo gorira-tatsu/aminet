@@ -5,7 +5,7 @@ branding:
   color: red
 inputs:
   path:
-    description: "Path to package.json"
+    description: "Path to the dependency manifest to review (package.json, requirements.txt, or pyproject.toml)"
     default: "package.json"
   depth:
     description: "Maximum dependency depth"
@@ -20,7 +20,7 @@ inputs:
     description: "Enable security deep analysis"
     default: "true"
   lockfile-path:
-    description: "Explicit path to lockfile (for monorepos)"
+    description: "Explicit path to lockfile (for monorepos or Python lockfiles used to pin pyproject review)"
     required: false
   dev:
     description: "Include devDependencies in review (default: true)"
@@ -75,9 +75,6 @@ runs:
         fi
         if [ "${{ inputs.security }}" = "true" ]; then
           ARGS+=("--security")
-        fi
-        if [ -n "${{ inputs.lockfile-path }}" ]; then
-          ARGS+=("--lockfile-path" "${{ inputs.lockfile-path }}")
         fi
         if [ -n "${{ inputs.lockfile-path }}" ]; then
           ARGS+=("--lockfile-path" "${{ inputs.lockfile-path }}")

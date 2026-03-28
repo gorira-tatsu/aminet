@@ -36,6 +36,15 @@ export function renderMarkdownComment(diff: DependencyDiff): string {
   lines.push(`**Risk Level**: ${icon} ${capitalize(diff.summary.riskLevel)}`);
   lines.push("");
 
+  if (diff.notes && diff.notes.length > 0) {
+    lines.push("### Analysis Notes");
+    lines.push("");
+    for (const note of diff.notes) {
+      lines.push(`- ${note}`);
+    }
+    lines.push("");
+  }
+
   const keyAlerts = buildKeyAlerts(diff);
   if (keyAlerts.length > 0) {
     lines.push("### Key Alerts");

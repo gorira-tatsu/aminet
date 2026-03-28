@@ -52,6 +52,7 @@ export interface Report {
   maxDepth: number;
   entries: ReportEntry[];
   summary: ReportSummary;
+  analysisNotes?: string[];
   contextNotes?: ReportContextNote[];
   securitySignals?: SecuritySignal[];
   securitySummary?: {

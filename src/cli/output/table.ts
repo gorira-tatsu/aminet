@@ -112,6 +112,14 @@ export function renderTable(report: Report): void {
   console.log(table.toString());
   console.log();
 
+  if (report.analysisNotes && report.analysisNotes.length > 0) {
+    console.log(chalk.bold("Analysis Notes:"));
+    for (const note of report.analysisNotes) {
+      console.log(`  - ${note}`);
+    }
+    console.log();
+  }
+
   // Summary
   renderSummary(report);
 

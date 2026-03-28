@@ -180,4 +180,48 @@ importers:
       expect(result!.packages.has("lodash")).toBe(false);
     });
   });
+
+  describe("python lockfiles", () => {
+    const pythonLock = `
+[[package]]
+name = "fastapi"
+version = "0.116.1"
+
+[[package]]
+name = "pydantic"
+version = "2.11.7"
+`;
+
+    it("parses poetry.lock packages", () => {
+      const result = parseLockfile("poetry.lock", pythonLock);
+      expect(result).not.toBeNull();
+      expect(result!.format).toBe("poetry.lock");
+      expect(result!.packages.get("fastapi")).toBe("0.116.1");
+      expect(result!.packages.get("pydantic")).toBe("2.11.7");
+    });
+
+    it("parses pdm.lock packages", () => {
+      const result = parseLockfile("pdm.lock", pythonLock);
+      expect(result).not.toBeNull();
+      expect(result!.format).toBe("pdm.lock");
+      expect(result!.packages.get("fastapi")).toBe("0.116.1");
+    });
+
+    it("parses uv.lock packages", () => {
+      const result = parseLockfile("uv.lock", pythonLock);
+      expect(result).not.toBeNull();
+      expect(result!.format).toBe("uv.lock");
+      expect(result!.packages.get("pydantic")).toBe("2.11.7");
+    });
+
+    it("parses CRLF-separated Python lockfiles", () => {
+      const result = parseLockfile(
+        "poetry.lock",
+        '[[package]]\r\nname = "fastapi"\r\nversion = "0.116.1"\r\n\r\n[[package]]\r\nname = "pydantic"\r\nversion = "2.11.7"\r\n',
+      );
+      expect(result).not.toBeNull();
+      expect(result!.packages.get("fastapi")).toBe("0.116.1");
+      expect(result!.packages.get("pydantic")).toBe("2.11.7");
+    });
+  });
 });

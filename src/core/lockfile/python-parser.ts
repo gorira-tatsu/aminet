@@ -1,63 +1,76 @@
 import { parsePep508 } from "../registry/pypi-client.js";
 
+export interface SkippedPythonDependency {
+  name?: string;
+  spec: string;
+  reason: "directive" | "marker";
+}
+
+export interface ParsedPythonManifest {
+  name?: string;
+  version?: string;
+  dependencies: Map<string, string>;
+  devDependencies: Map<string, string>;
+  skipped: SkippedPythonDependency[];
+  bestEffortDependencies: string[];
+}
+
+const DEV_LIKE_GROUPS = ["dev", "test", "tests", "docs", "doc", "lint", "typing", "typecheck"];
+
 /**
  * Parse a requirements.txt file and return a map of package name to version specifier.
- *
- * Handles:
- * - Pinned versions: `requests==2.31.0`
- * - Range specifiers: `flask>=2.0`
- * - Comments (`#`) and empty lines
- * - Skips `-r` includes, `-e` editables, and `--` flags
  */
 export function parseRequirementsTxt(content: string): Map<string, string> {
+  return parseRequirementsManifest(content).dependencies;
+}
+
+export function parseRequirementsManifest(content: string): ParsedPythonManifest {
   const packages = new Map<string, string>();
+  const skipped: SkippedPythonDependency[] = [];
 
   for (const rawLine of content.split("\n")) {
     const line = rawLine.trim();
 
-    // Skip empty lines
-    if (line === "") continue;
+    if (line === "" || line.startsWith("#")) continue;
 
-    // Skip comments
-    if (line.startsWith("#")) continue;
+    if (line.startsWith("-r ") || line.startsWith("-r\t")) {
+      skipped.push({ spec: line, reason: "directive" });
+      continue;
+    }
+    if (line.startsWith("-e ") || line.startsWith("-e\t")) {
+      skipped.push({ spec: line, reason: "directive" });
+      continue;
+    }
+    if (line.startsWith("--")) {
+      skipped.push({ spec: line, reason: "directive" });
+      continue;
+    }
 
-    // Skip -r includes, -e editables, and -- flags
-    if (line.startsWith("-r ") || line.startsWith("-r\t")) continue;
-    if (line.startsWith("-e ") || line.startsWith("-e\t")) continue;
-    if (line.startsWith("--")) continue;
-
-    // Strip inline comments: "requests==2.31.0 # pinned"
     const commentIdx = line.indexOf(" #");
     const cleaned = commentIdx !== -1 ? line.slice(0, commentIdx).trim() : line;
     if (cleaned === "") continue;
 
-    // Use PEP 508 parser for the dependency spec
-    const parsed = parsePep508(cleaned);
-    if (!parsed) continue;
-
-    const { name, versionSpec, hasMarker } = parsed;
-    if (hasMarker) continue;
-
-    // For pinned versions (==X.Y.Z), extract just the version number
-    const pinnedMatch = versionSpec.match(/^==\s*(.+)$/);
-    if (pinnedMatch) {
-      packages.set(name, pinnedMatch[1].trim());
-    } else {
-      // Keep the full specifier string for ranges
-      packages.set(name, versionSpec);
-    }
+    addParsedDep(cleaned, packages, skipped);
   }
 
-  return packages;
+  return {
+    dependencies: packages,
+    devDependencies: new Map(),
+    skipped,
+    bestEffortDependencies: collectBestEffortDependencies(packages),
+  };
 }
 
 /**
- * Parse a pyproject.toml [project] section using regex-based parsing (no TOML library).
+ * Parse a pyproject.toml file and return production/dev dependencies plus metadata.
  *
- * Extracts:
- * - `[project].name` and `[project].version`
- * - `[project].dependencies` array
- * - `[project.optional-dependencies].dev` array for dev deps
+ * Supported sections:
+ * - [project]
+ * - [project.optional-dependencies]
+ * - [dependency-groups]
+ * - [tool.poetry.dependencies]
+ * - [tool.poetry.dev-dependencies]
+ * - [tool.poetry.group.<name>.dependencies]
  */
 export function parsePyprojectDependencies(content: string): {
   name?: string;
@@ -65,22 +78,49 @@ export function parsePyprojectDependencies(content: string): {
   dependencies: Map<string, string>;
   devDependencies: Map<string, string>;
 } {
+  const parsed = parsePyprojectManifest(content);
+  return {
+    name: parsed.name,
+    version: parsed.version,
+    dependencies: parsed.dependencies,
+    devDependencies: parsed.devDependencies,
+  };
+}
+
+export function parsePyprojectManifest(content: string): ParsedPythonManifest {
   const dependencies = new Map<string, string>();
   const devDependencies = new Map<string, string>();
+  const skipped: SkippedPythonDependency[] = [];
 
-  const name = extractStringField(content, "project", "name");
-  const version = extractStringField(content, "project", "version");
+  const name =
+    extractStringField(content, "project", "name") ??
+    extractStringField(content, "tool.poetry", "name");
+  const version =
+    extractStringField(content, "project", "version") ??
+    extractStringField(content, "tool.poetry", "version");
 
-  // Extract [project].dependencies array
-  const depsArray = extractTomlArray(content, "project", "dependencies");
-  for (const dep of depsArray) {
-    addParsedDep(dep, dependencies);
+  for (const dep of extractTomlArray(content, "project", "dependencies")) {
+    addParsedDep(dep, dependencies, skipped);
   }
 
-  // Extract [project.optional-dependencies].dev array
-  const devDepsArray = extractTomlArray(content, "project.optional-dependencies", "dev");
-  for (const dep of devDepsArray) {
-    addParsedDep(dep, devDependencies);
+  for (const group of DEV_LIKE_GROUPS) {
+    for (const dep of extractTomlArray(content, "project.optional-dependencies", group)) {
+      addParsedDep(dep, devDependencies, skipped);
+    }
+    for (const dep of extractTomlArray(content, "dependency-groups", group)) {
+      addParsedDep(dep, devDependencies, skipped);
+    }
+  }
+
+  parsePoetryDependencySection(content, "tool.poetry.dependencies", dependencies, skipped);
+  parsePoetryDependencySection(content, "tool.poetry.dev-dependencies", devDependencies, skipped);
+  for (const group of DEV_LIKE_GROUPS) {
+    parsePoetryDependencySection(
+      content,
+      `tool.poetry.group.${group}.dependencies`,
+      devDependencies,
+      skipped,
+    );
   }
 
   return {
@@ -88,44 +128,91 @@ export function parsePyprojectDependencies(content: string): {
     version: version ?? undefined,
     dependencies,
     devDependencies,
+    skipped,
+    bestEffortDependencies: [
+      ...new Set([
+        ...collectBestEffortDependencies(dependencies),
+        ...collectBestEffortDependencies(devDependencies),
+      ]),
+    ],
   };
 }
 
-/**
- * Parse a PEP 508 dependency string and add it to the given map.
- */
-function addParsedDep(dep: string, map: Map<string, string>): void {
+function addParsedDep(
+  dep: string,
+  map: Map<string, string>,
+  skipped: SkippedPythonDependency[],
+): void {
   const parsed = parsePep508(dep);
   if (!parsed) return;
 
   const { name, versionSpec, hasMarker } = parsed;
-  if (hasMarker) return;
-  const pinnedMatch = versionSpec.match(/^==\s*(.+)$/);
-  if (pinnedMatch) {
-    map.set(name, pinnedMatch[1].trim());
-  } else {
-    map.set(name, versionSpec);
+  if (hasMarker) {
+    skipped.push({ name, spec: dep, reason: "marker" });
+    return;
+  }
+
+  map.set(name, normalizePythonVersionSpec(versionSpec));
+}
+
+function parsePoetryDependencySection(
+  content: string,
+  section: string,
+  map: Map<string, string>,
+  skipped: SkippedPythonDependency[],
+): void {
+  const sectionContent = extractSectionContent(content, section);
+  if (!sectionContent) return;
+
+  for (const rawLine of sectionContent.split("\n")) {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#")) continue;
+
+    const simpleMatch = line.match(/^([A-Za-z0-9._-]+)\s*=\s*["']([^"']+)["']/);
+    if (simpleMatch) {
+      const name = simpleMatch[1];
+      if (name.toLowerCase() === "python") continue;
+      map.set(name, normalizePythonVersionSpec(simpleMatch[2]));
+      continue;
+    }
+
+    const inlineTableMatch = line.match(/^([A-Za-z0-9._-]+)\s*=\s*\{(.+)\}$/);
+    if (!inlineTableMatch) continue;
+
+    const name = inlineTableMatch[1];
+    if (name.toLowerCase() === "python") continue;
+
+    const tableBody = inlineTableMatch[2];
+    const markerMatch = tableBody.match(/markers\s*=\s*["']([^"']+)["']/);
+    if (markerMatch) {
+      skipped.push({ name, spec: line, reason: "marker" });
+      continue;
+    }
+
+    const versionMatch = tableBody.match(/version\s*=\s*["']([^"']+)["']/);
+    if (versionMatch) {
+      map.set(name, normalizePythonVersionSpec(versionMatch[1]));
+    }
   }
 }
 
-/**
- * Extract a simple string field from a TOML section.
- * e.g. extractStringField(content, "project", "name") finds `name = "foo"` under `[project]`.
- */
-function extractStringField(content: string, section: string, field: string): string | null {
+function extractSectionContent(content: string, section: string): string | null {
   const sectionPattern = new RegExp(`^\\[${escapeRegex(section)}\\]\\s*$`, "m");
   const sectionMatch = sectionPattern.exec(content);
   if (!sectionMatch) return null;
 
   const afterSection = content.slice(sectionMatch.index + sectionMatch[0].length);
-
-  // Find the next section header (or end of string)
   const nextSectionMatch = afterSection.match(/^\[/m);
-  const sectionContent = nextSectionMatch
-    ? afterSection.slice(0, nextSectionMatch.index)
-    : afterSection;
+  return nextSectionMatch ? afterSection.slice(0, nextSectionMatch.index) : afterSection;
+}
 
-  // Match field = "value" or field = 'value'
+/**
+ * Extract a simple string field from a TOML section.
+ */
+function extractStringField(content: string, section: string, field: string): string | null {
+  const sectionContent = extractSectionContent(content, section);
+  if (!sectionContent) return null;
+
   const fieldPattern = new RegExp(`^${escapeRegex(field)}\\s*=\\s*["']([^"']*)["']`, "m");
   const fieldMatch = fieldPattern.exec(sectionContent);
   return fieldMatch ? fieldMatch[1] : null;
@@ -133,38 +220,18 @@ function extractStringField(content: string, section: string, field: string): st
 
 /**
  * Extract an array value from a TOML section.
- * Handles multi-line arrays like:
- *   dependencies = [
- *     "requests>=2.20",
- *     "flask>=2.0",
- *   ]
- * and single-line arrays like:
- *   dependencies = ["requests>=2.20", "flask>=2.0"]
  */
 function extractTomlArray(content: string, section: string, field: string): string[] {
-  const sectionPattern = new RegExp(`^\\[${escapeRegex(section)}\\]\\s*$`, "m");
-  const sectionMatch = sectionPattern.exec(content);
-  if (!sectionMatch) return [];
+  const sectionContent = extractSectionContent(content, section);
+  if (!sectionContent) return [];
 
-  const afterSection = content.slice(sectionMatch.index + sectionMatch[0].length);
-
-  // Find the next section header (or end of string)
-  const nextSectionMatch = afterSection.match(/^\[/m);
-  const sectionContent = nextSectionMatch
-    ? afterSection.slice(0, nextSectionMatch.index)
-    : afterSection;
-
-  // Find the field assignment: field = [...]
   const fieldStart = new RegExp(`^${escapeRegex(field)}\\s*=\\s*\\[`, "m");
   const fieldMatch = fieldStart.exec(sectionContent);
   if (!fieldMatch) return [];
 
-  // Find the content between [ and ]
   const bracketStart = fieldMatch.index + fieldMatch[0].length;
   const remaining = sectionContent.slice(bracketStart);
 
-  // Find the closing bracket, skipping brackets inside quoted strings
-  // (e.g., "package[extras]>=1.0")
   let closingBracket = -1;
   let inString = false;
   let stringChar = "";
@@ -183,18 +250,33 @@ function extractTomlArray(content: string, section: string, field: string): stri
   if (closingBracket === -1) return [];
 
   const arrayContent = remaining.slice(0, closingBracket);
-
-  // Extract quoted strings from the array content
   const items: string[] = [];
   const stringPattern = /["']([^"']*)["']/g;
-  for (const m of arrayContent.matchAll(stringPattern)) {
-    const value = m[1].trim();
-    if (value !== "") {
-      items.push(value);
-    }
+  for (const match of arrayContent.matchAll(stringPattern)) {
+    const value = match[1].trim();
+    if (value !== "") items.push(value);
   }
 
   return items;
+}
+
+function collectBestEffortDependencies(packages: Map<string, string>): string[] {
+  return [...packages.entries()]
+    .filter(([, spec]) => isBestEffortVersionSpec(spec))
+    .map(([name]) => name)
+    .sort();
+}
+
+function isBestEffortVersionSpec(versionSpec: string): boolean {
+  const trimmed = normalizePythonVersionSpec(versionSpec).trim();
+  if (trimmed === "" || trimmed.toLowerCase() === "latest") return true;
+  return !/^\d+(?:\.\d+)*(?:[A-Za-z0-9._+-]+)?$/.test(trimmed);
+}
+
+function normalizePythonVersionSpec(versionSpec: string): string {
+  const trimmed = versionSpec.trim();
+  const pinnedMatch = trimmed.match(/^==\s*(.+)$/);
+  return pinnedMatch ? pinnedMatch[1].trim() : trimmed;
 }
 
 function escapeRegex(str: string): string {

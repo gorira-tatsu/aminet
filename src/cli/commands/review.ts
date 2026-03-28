@@ -6,6 +6,11 @@ import { buildReportForPackageSpec } from "../../core/analyzer.js";
 import { loadConfig } from "../../core/config/loader.js";
 import type { DependencyDiff } from "../../core/diff/types.js";
 import { parseLockfile } from "../../core/lockfile/parser.js";
+import {
+  type ParsedPythonManifest,
+  parsePyprojectManifest,
+  parseRequirementsManifest,
+} from "../../core/lockfile/python-parser.js";
 import { setNpmCacheEnabled, setNpmToken } from "../../core/registry/npm-client.js";
 import {
   buildReviewDiff,
@@ -32,6 +37,12 @@ export interface ReviewOptions extends AnalyzeOptions {
   lockfilePath?: string;
 }
 
+interface ReviewManifest {
+  ecosystem: "npm" | "pypi";
+  dependencies: Map<string, string>;
+  notes: string[];
+}
+
 export async function reviewCommand(target: string, options: ReviewOptions): Promise<void> {
   if (options.verbose) {
     setLogLevel("debug");
@@ -55,27 +66,26 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
   const baseRef = options.base ?? "HEAD~1";
   const headRef = options.head; // undefined means working tree
 
+  const ecosystem = inferReviewEcosystem(target);
   const useSpinner = !options.ci;
-  const spinner = useSpinner ? ora("Loading package.json versions...").start() : null;
+  const spinner = useSpinner ? ora("Loading dependency manifests...").start() : null;
 
-  // Load base package.json
-  let basePkg: Record<string, unknown>;
+  let baseManifest: ReviewManifest;
   try {
-    basePkg = await loadPackageJson(target, baseRef);
-    if (spinner) spinner.text = "Loaded base package.json";
+    baseManifest = await loadReviewManifest(target, baseRef, options.dev, ecosystem);
+    if (spinner) spinner.text = "Loaded base dependency manifest";
   } catch (error) {
-    if (spinner) spinner.fail("Failed to load base package.json");
+    if (spinner) spinner.fail("Failed to load base dependency manifest");
     console.error(chalk.red(error instanceof Error ? error.message : String(error)));
     process.exit(1);
   }
 
-  // Load head package.json
-  let headPkg: Record<string, unknown>;
+  let headManifest: ReviewManifest;
   try {
-    headPkg = await loadPackageJson(target, headRef);
-    if (spinner) spinner.text = "Loaded head package.json";
+    headManifest = await loadReviewManifest(target, headRef, options.dev, ecosystem);
+    if (spinner) spinner.text = "Loaded head dependency manifest";
   } catch (error) {
-    if (spinner) spinner.fail("Failed to load head package.json");
+    if (spinner) spinner.fail("Failed to load head dependency manifest");
     console.error(chalk.red(error instanceof Error ? error.message : String(error)));
     process.exit(1);
   }
@@ -86,19 +96,14 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
     dev: options.dev,
     noCache: options.noCache,
     security: options.security,
+    ecosystem,
   };
 
-  const baseLockfile = await loadAdjacentLockfile(target, baseRef, options.lockfilePath);
-  const headLockfile = await loadAdjacentLockfile(target, headRef, options.lockfilePath);
+  const baseLockfile = await loadAdjacentLockfile(target, baseRef, options.lockfilePath, ecosystem);
+  const headLockfile = await loadAdjacentLockfile(target, headRef, options.lockfilePath, ecosystem);
 
-  const baseDeps = collectDirectDependencies(
-    basePkg as Parameters<typeof collectDirectDependencies>[0],
-    options.dev,
-  );
-  const headDeps = collectDirectDependencies(
-    headPkg as Parameters<typeof collectDirectDependencies>[0],
-    options.dev,
-  );
+  const baseDeps = baseManifest.dependencies;
+  const headDeps = headManifest.dependencies;
   const baseResolved = resolveDirectDependencyVersions(baseDeps, baseLockfile);
   const headResolved = resolveDirectDependencyVersions(headDeps, headLockfile);
   const allChanges = diffDirectDependencies(baseDeps, headDeps, baseResolved, headResolved);
@@ -170,6 +175,8 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
     diff = buildReviewDiff(changes, baseAnalyses, headAnalyses);
   }
 
+  diff.notes = [...new Set([...baseManifest.notes, ...headManifest.notes])];
+
   const markdown = renderMarkdownComment(diff);
 
   // Post to GitHub PR if credentials available
@@ -211,9 +218,107 @@ async function analyzePackageWithCache(
   return result;
 }
 
-async function loadPackageJson(filePath: string, ref?: string): Promise<Record<string, unknown>> {
+export function inferReviewEcosystem(target: string): "npm" | "pypi" {
+  const lower = target.toLowerCase();
+  if (
+    lower.endsWith("requirements.txt") ||
+    lower.endsWith("pyproject.toml") ||
+    lower.endsWith("poetry.lock") ||
+    lower.endsWith("pdm.lock") ||
+    lower.endsWith("uv.lock")
+  ) {
+    return "pypi";
+  }
+  return "npm";
+}
+
+async function loadReviewManifest(
+  filePath: string,
+  ref: string | undefined,
+  includeDev: boolean | undefined,
+  ecosystem: "npm" | "pypi",
+): Promise<ReviewManifest> {
   const content = await loadFileAtRefOrPath(filePath, ref);
-  return JSON.parse(content);
+  if (ecosystem === "pypi") {
+    return parsePythonReviewManifest(filePath, content, includeDev);
+  }
+
+  const pkg = JSON.parse(content) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  return {
+    ecosystem,
+    dependencies: collectDirectDependencies(pkg, includeDev),
+    notes: [],
+  };
+}
+
+export function parsePythonReviewManifest(
+  filePath: string,
+  content: string,
+  includeDev: boolean | undefined,
+): ReviewManifest {
+  const baseName = filePath.split(/[/\\]/).pop() ?? filePath;
+
+  if (baseName === "pyproject.toml") {
+    const parsed = parsePyprojectManifest(content);
+    const dependencies = new Map(parsed.dependencies);
+    if (includeDev) {
+      for (const [name, version] of parsed.devDependencies) {
+        dependencies.set(name, version);
+      }
+    }
+    return {
+      ecosystem: "pypi",
+      dependencies,
+      notes: buildPythonReviewNotes(parsed, includeDev),
+    };
+  }
+
+  if (baseName === "poetry.lock" || baseName === "pdm.lock" || baseName === "uv.lock") {
+    throw new Error(
+      `Review mode expects a Python manifest, not ${baseName}. Pass pyproject.toml or requirements.txt and use --lockfile-path if you need pinned versions.`,
+    );
+  }
+
+  const parsed = parseRequirementsManifest(content);
+  return {
+    ecosystem: "pypi",
+    dependencies: new Map(parsed.dependencies),
+    notes: buildPythonReviewNotes(parsed, includeDev),
+  };
+}
+
+export function buildPythonReviewNotes(
+  parsed: ParsedPythonManifest,
+  includeDev: boolean | undefined,
+): string[] {
+  const notes: string[] = [];
+
+  if (parsed.bestEffortDependencies.length > 0) {
+    notes.push(
+      `Best-effort resolution was used for: ${parsed.bestEffortDependencies.join(", ")}. Unpinned Python specs are reviewed against the latest compatible PyPI release and may not match the exact environment.`,
+    );
+  }
+
+  const markerSkipped = parsed.skipped.filter((entry) => entry.reason === "marker");
+  if (markerSkipped.length > 0) {
+    const names = markerSkipped
+      .map((entry) => entry.name ?? entry.spec)
+      .filter((value, index, all) => all.indexOf(value) === index);
+    notes.push(
+      `Skipped marker-gated Python dependencies: ${names.join(", ")}. Environment-specific requirements are not resolved in review mode.`,
+    );
+  }
+
+  if (includeDev && parsed.devDependencies.size > 0) {
+    notes.push(
+      `Included ${parsed.devDependencies.size} Python optional/dev dependencies in review mode.`,
+    );
+  }
+
+  return notes;
 }
 
 async function loadFileAtRefOrPath(filePath: string, ref?: string): Promise<string> {
@@ -267,18 +372,23 @@ function toGitRelativePath(filePath: string, gitRoot: string | null): string {
   return relPath.replace(/\\/g, "/");
 }
 
-const LOCKFILE_NAMES = ["pnpm-lock.yaml", "bun.lock", "package-lock.json"];
+function getReviewLockfileNames(ecosystem: "npm" | "pypi"): string[] {
+  return ecosystem === "pypi"
+    ? ["uv.lock", "poetry.lock", "pdm.lock"]
+    : ["pnpm-lock.yaml", "bun.lock", "package-lock.json"];
+}
 
 export async function loadAdjacentLockfile(
-  packageJsonPath: string,
+  manifestPath: string,
   ref?: string,
   explicitLockfilePath?: string,
+  ecosystem: "npm" | "pypi" = "npm",
 ): Promise<ReturnType<typeof parseLockfile> | null> {
   if (ref && (await isReadableFile(ref))) {
     ref = undefined;
   }
 
-  const pkgDir = resolve(dirname(packageJsonPath));
+  const manifestDir = resolve(dirname(manifestPath));
 
   const gitRoot = await findGitRoot();
 
@@ -289,7 +399,7 @@ export async function loadAdjacentLockfile(
       const gitRelativePath = ref ? toGitRelativePath(absPath, gitRoot) : explicitLockfilePath;
       const content = await loadFileAtRefOrPath(gitRelativePath, ref);
       const lockfileDir = resolve(dirname(explicitLockfilePath));
-      const workspacePath = computeWorkspacePath(lockfileDir, pkgDir);
+      const workspacePath = computeWorkspacePath(lockfileDir, manifestDir);
       const parsed = parseLockfile(explicitLockfilePath, content, workspacePath);
       if (parsed && parsed.packages.size > 0) {
         return parsed;
@@ -304,16 +414,16 @@ export async function loadAdjacentLockfile(
     return null;
   }
 
-  // Walk up from package.json directory, stopping at git root
-  let dir = pkgDir;
+  // Walk up from the manifest directory, stopping at git root
+  let dir = manifestDir;
 
   while (true) {
-    for (const lockfileName of LOCKFILE_NAMES) {
+    for (const lockfileName of getReviewLockfileNames(ecosystem)) {
       const candidate = join(dir, lockfileName);
       const gitRelativeCandidate = ref ? toGitRelativePath(candidate, gitRoot) : candidate;
       try {
         const content = await loadFileAtRefOrPath(gitRelativeCandidate, ref);
-        const workspacePath = computeWorkspacePath(dir, pkgDir);
+        const workspacePath = computeWorkspacePath(dir, manifestDir);
         const parsed = parseLockfile(candidate, content, workspacePath);
         if (parsed && parsed.packages.size > 0) {
           return parsed;

@@ -82,7 +82,7 @@ const CONFIG_FIELDS: ConfigField[] = [
   },
   {
     key: "excludePackages",
-    prompt: "Packages to exclude (comma-separated, supports wildcards)",
+    prompt: "Packages to exclude (comma-separated internal/private patterns to skip)",
     type: "string[]",
     defaultValue: [],
     hint: "e.g., @my-org/*,legacy-pkg",
@@ -204,7 +204,7 @@ function handleNonInteractive(configPath: string, exists: boolean, options: Init
 
   writeFileSync(configPath, `${serializeConfig(config)}\n`, "utf-8");
   console.log(formatConfig(config));
-  console.log(chalk.dim("\nTip: Set NPM_TOKEN as an environment variable for private registries."));
+  printPrivateRegistryGuidance(config);
 }
 
 async function handleInteractive(configPath: string, exists: boolean): Promise<void> {
@@ -327,10 +327,23 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
 
     writeFileSync(configPath, `${serializeConfig(finalConfig)}\n`, "utf-8");
     console.log(chalk.green(`\n  Wrote ${CONFIG_FILENAME}`));
-    console.log(
-      chalk.dim("  Tip: Set NPM_TOKEN as an environment variable for private registries."),
-    );
+    printPrivateRegistryGuidance(finalConfig, "  ");
   } finally {
     rl.close();
   }
+}
+
+function printPrivateRegistryGuidance(config: AmiConfig, indent = ""): void {
+  const prefix = indent ? `\n${indent}` : "\n";
+  const lines = [
+    `${prefix}Private registry guidance:`,
+    `${indent}- Set ${chalk.bold("NPM_TOKEN")} in the environment when private packages should be analyzed.`,
+    `${indent}- Use ${chalk.bold("excludePackages")} when internal packages should be skipped instead.`,
+  ];
+
+  if (config.excludePackages && config.excludePackages.length > 0) {
+    lines.push(`${indent}- Current exclude patterns: ${config.excludePackages.join(", ")}`);
+  }
+
+  console.log(chalk.dim(lines.join("\n")));
 }

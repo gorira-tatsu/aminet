@@ -12,9 +12,10 @@ import { resolveDependencyGraph } from "../../core/graph/resolver.js";
 import type { DependencyGraph } from "../../core/graph/types.js";
 import { checkDenyList } from "../../core/license/deny-list.js";
 import { getLicenseAlternatives } from "../../core/license/spdx.js";
-import { tryParseLockfile } from "../../core/lockfile/parser.js";
+import { parseLockfile, tryParseLockfile } from "../../core/lockfile/parser.js";
 import {
-  parsePyprojectDependencies,
+  parsePyprojectManifest,
+  parseRequirementsManifest,
   parseRequirementsTxt,
 } from "../../core/lockfile/python-parser.js";
 import type { PhantomDependency } from "../../core/phantom/scanner.js";
@@ -106,7 +107,12 @@ export function inferAnalyzeTarget(
   fileMode: boolean;
 } {
   const targetBasename = basename(target);
-  const isPythonFile = targetBasename === "requirements.txt" || targetBasename === "pyproject.toml";
+  const isPythonFile =
+    targetBasename === "requirements.txt" ||
+    targetBasename === "pyproject.toml" ||
+    targetBasename === "poetry.lock" ||
+    targetBasename === "pdm.lock" ||
+    targetBasename === "uv.lock";
   const ecosystem = isPythonFile ? (options.ecosystem ?? "pypi") : (options.ecosystem ?? "npm");
   const fileMode =
     options.file ||
@@ -119,7 +125,10 @@ export function inferAnalyzeTarget(
     target === "pnpm-lock.yaml" ||
     target === "bun.lock" ||
     target === "bun.lockb" ||
-    target === "package-lock.json";
+    target === "package-lock.json" ||
+    target === "poetry.lock" ||
+    target === "pdm.lock" ||
+    target === "uv.lock";
 
   return {
     ecosystem,
@@ -290,12 +299,13 @@ async function analyzePythonFile(
   const content = await readFile(filePath, "utf-8");
   const fileBaseName = basename(filePath);
 
-  let deps: Map<string, string>;
+  let deps = new Map<string, string>();
   let packageName = fileBaseName;
   let packageVersion = "0.0.0";
+  const analysisNotes: string[] = [];
 
   if (fileBaseName === "pyproject.toml") {
-    const parsed = parsePyprojectDependencies(content);
+    const parsed = parsePyprojectManifest(content);
     deps = new Map(parsed.dependencies);
     packageName = parsed.name ?? fileBaseName;
     packageVersion = parsed.version ?? packageVersion;
@@ -304,8 +314,59 @@ async function analyzePythonFile(
         deps.set(name, ver);
       }
     }
+    analysisNotes.push(...buildPythonAnalysisNotes(parsed.skipped, parsed.bestEffortDependencies));
+  } else if (fileBaseName === "requirements.txt") {
+    const parsed = parseRequirementsManifest(content);
+    deps = new Map(parsed.dependencies);
+    analysisNotes.push(...buildPythonAnalysisNotes(parsed.skipped, parsed.bestEffortDependencies));
+  } else if (
+    fileBaseName === "poetry.lock" ||
+    fileBaseName === "pdm.lock" ||
+    fileBaseName === "uv.lock"
+  ) {
+    const pyprojectPath = join(dirname(filePath), "pyproject.toml");
+    if (!existsSync(pyprojectPath)) {
+      console.error(
+        chalk.red(
+          `No pyproject.toml found alongside ${filePath}. Python lockfiles need a pyproject.toml.`,
+        ),
+      );
+      process.exit(1);
+    }
+
+    const pyprojectContent = await readFile(pyprojectPath, "utf-8");
+    const parsed = parsePyprojectManifest(pyprojectContent);
+    deps = new Map(parsed.dependencies);
+    packageName = parsed.name ?? fileBaseName;
+    packageVersion = parsed.version ?? packageVersion;
+    if (options.dev) {
+      for (const [name, ver] of parsed.devDependencies) {
+        deps.set(name, ver);
+      }
+    }
+    analysisNotes.push(...buildPythonAnalysisNotes(parsed.skipped, parsed.bestEffortDependencies));
   } else {
     deps = parseRequirementsTxt(content);
+  }
+
+  const pythonLockfile =
+    fileBaseName === "poetry.lock" || fileBaseName === "pdm.lock" || fileBaseName === "uv.lock"
+      ? parseLockfile(fileBaseName, content)
+      : await tryParseLockfile(filePath, "pypi");
+  if (pythonLockfile) {
+    let pinned = 0;
+    for (const [name] of deps) {
+      const pinnedVersion = pythonLockfile.packages.get(name);
+      if (pinnedVersion) {
+        deps.set(name, pinnedVersion);
+        pinned++;
+      }
+    }
+    if (pinned > 0) {
+      analysisNotes.push(
+        `Pinned ${pinned}/${deps.size} Python direct dependencies from ${pythonLockfile.format}.`,
+      );
+    }
   }
 
   // Apply exclude patterns
@@ -347,7 +408,7 @@ async function analyzePythonFile(
     spinner.succeed(`Resolved ${result.graph.nodes.size} packages`);
   }
 
-  outputAndExit(result.graph, result.vulnerabilities, options, config);
+  outputAndExit(result.graph, result.vulnerabilities, options, config, { analysisNotes });
 }
 
 async function analyzePackage(
@@ -474,6 +535,7 @@ async function scanPhase(
 interface ExtraReportData {
   phantomDeps?: PhantomDependency[];
   pinningReport?: PinningReport;
+  analysisNotes?: string[];
 }
 
 async function outputAndExit(
@@ -520,6 +582,9 @@ async function outputAndExit(
   }
 
   const report = buildReport(graph, vulnerabilities, reportOptions);
+  if (extra?.analysisNotes && extra.analysisNotes.length > 0) {
+    report.analysisNotes = [...new Set(extra.analysisNotes)];
+  }
 
   // Output
   if (options.cyclonedx) {
@@ -690,6 +755,31 @@ function writeGitHubSummary(report: Report): void {
   } catch {
     // Non-critical
   }
+}
+
+function buildPythonAnalysisNotes(
+  skipped: Array<{ name?: string; spec: string; reason: "directive" | "marker" }>,
+  bestEffortDependencies: string[],
+): string[] {
+  const notes: string[] = [];
+  const markerSkipped = skipped.filter((entry) => entry.reason === "marker");
+
+  if (bestEffortDependencies.length > 0) {
+    notes.push(
+      `Best-effort resolution was used for: ${bestEffortDependencies.join(", ")}. Unpinned Python specs resolve against the latest compatible PyPI release and may not match the exact environment.`,
+    );
+  }
+
+  if (markerSkipped.length > 0) {
+    const names = markerSkipped
+      .map((entry) => entry.name ?? entry.spec)
+      .filter((value, index, all) => all.indexOf(value) === index);
+    notes.push(
+      `Skipped marker-gated Python dependencies: ${names.join(", ")}. Environment-specific requirements are not resolved in file-based analysis.`,
+    );
+  }
+
+  return notes;
 }
 
 function parsePackageSpec(spec: string): {

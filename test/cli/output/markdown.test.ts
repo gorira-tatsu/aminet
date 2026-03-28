@@ -187,6 +187,19 @@ describe("renderMarkdownComment", () => {
     expect(md).toContain("HIGH");
   });
 
+  it("renders analysis notes when present", () => {
+    const diff = makeEmptyDiff();
+    diff.notes = [
+      "Best-effort resolution was used for: fastapi.",
+      "Skipped marker-gated Python dependencies: typing-extensions.",
+    ];
+
+    const md = renderMarkdownComment(diff);
+    expect(md).toContain("### Analysis Notes");
+    expect(md).toContain("Best-effort resolution was used for: fastapi.");
+    expect(md).toContain("Skipped marker-gated Python dependencies: typing-extensions.");
+  });
+
   it("renders declared and resolved versions for updated dependencies", () => {
     const diff = makeEmptyDiff();
     diff.updated = [

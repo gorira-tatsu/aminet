@@ -19,7 +19,7 @@ program
   .description("Analyze dependencies, licenses, and vulnerabilities")
   .argument(
     "<package>",
-    "Package (e.g., express@4.21.2) or file path (package.json, requirements.txt)",
+    "Package (e.g., express@4.21.2) or file path (package.json, requirements.txt, pyproject.toml, poetry.lock, pdm.lock, uv.lock)",
   )
   .option("--json", "Output as JSON")
   .option("--tree", "Output as dependency tree")
@@ -78,8 +78,8 @@ program
 program
   .command("ci")
   .description("CI-optimized analysis (alias for analyze --ci --json)")
-  .argument("<package>", "Package or --file path to analyze")
-  .option("--file", "Treat argument as path to package.json")
+  .argument("<package>", "Package or manifest/lockfile path to analyze")
+  .option("--file", "Treat argument as a manifest or lockfile path")
   .option("-d, --depth <number>", "Maximum dependency depth", parseInt)
   .option("--dev", "Include devDependencies")
   .option("--fail-on-vuln <severity>", "Exit non-zero on vulnerabilities (default: high)")
@@ -97,7 +97,7 @@ program
 program
   .command("review")
   .description("Compare dependency changes between two versions for PR review")
-  .argument("<path>", "Path to package.json")
+  .argument("<path>", "Path to package.json, requirements.txt, or pyproject.toml")
   .option("--base <ref>", "Base git ref or file path (default: HEAD~1)")
   .option("--head <ref>", "Head git ref or file path (default: working tree)")
   .option("--pr-number <number>", "GitHub PR number for comment posting")

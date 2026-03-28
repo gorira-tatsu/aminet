@@ -9,6 +9,8 @@
 
 It analyzes dependency graphs, vulnerabilities, licenses, security signals, trust, freshness, provenance, and version pinning, then renders the result as terminal output, machine-readable JSON, SBOMs, or PR review comments.
 
+Roadmap and 1.0 criteria live in [`ROADMAP.md`](./ROADMAP.md).
+
 ## Status
 
 - Early project, pre-`1.0`
@@ -17,7 +19,7 @@ It analyzes dependency graphs, vulnerabilities, licenses, security signals, trus
 
 ## GitHub Action
 
-The main distribution target is GitHub Actions. `aminet` is designed to review npm dependency changes in pull requests and post or update a focused review comment.
+The main distribution target is GitHub Actions. `aminet` is designed to review dependency changes in pull requests and post or update a focused review comment for npm and supported Python manifest workflows.
 
 This repository ships a composite action in [`action.yml`](./action.yml).
 
@@ -57,14 +59,14 @@ This action is strongest when you want:
 
 Common inputs:
 
-- `path`: manifest path, usually `package.json`
+- `path`: manifest path, usually `package.json`, `requirements.txt`, or `pyproject.toml`
 - `depth`: maximum dependency depth to resolve
 - `dev`: include devDependencies in review (default: `"true"`)
 - `deny-license`: comma-separated SPDX IDs to block
 - `fail-on-vuln`: fail the job at or above a severity threshold
 - `security`: enable deeper security checks
 - `version`: pin the published `aminet` CLI version explicitly
-- `lockfile-path`: explicit path to lockfile (for monorepos)
+- `lockfile-path`: explicit path to lockfile (for monorepos, or to pin `pyproject.toml` review with `poetry.lock`, `pdm.lock`, or `uv.lock`)
 - `exclude-packages`: comma-separated packages to skip (supports wildcards like `@scope/*`)
 - `npm-token`: npm auth token for private registry access
 
@@ -78,6 +80,16 @@ For monorepo usage where `package.json` is in a sub-package:
 ```
 
 The review command automatically walks up parent directories to find lockfiles and reads the correct workspace section from pnpm lockfiles. Use `lockfile-path` when auto-detection does not work for your layout.
+
+For Python review from a manifest:
+
+```yaml
+      - uses: gorira-tatsu/aminet@v0.2.1
+        with:
+          path: pyproject.toml
+          lockfile-path: uv.lock
+          security: "true"
+```
 
 For repository-local usage during development:
 
@@ -163,6 +175,8 @@ Review dependency changes in a branch (includes devDependencies by default):
 ```bash
 npx aminet review package.json --base HEAD~1 --security
 npx aminet review package.json --base HEAD~1 --no-dev  # exclude devDependencies
+npx aminet review requirements.txt --base HEAD~1 --security
+npx aminet review pyproject.toml --base HEAD~1 --lockfile-path uv.lock
 ```
 
 Review with private packages (skip or authenticate):
@@ -180,6 +194,8 @@ npx aminet init --defaults         # non-interactive with sensible defaults
 npx aminet init --defaults --merge # merge defaults into existing config
 npx aminet init --defaults --force # overwrite existing config
 ```
+
+`init` does not embed private registry secrets by default. Use `NPM_TOKEN` in the environment when private packages should be analyzed, or `excludePackages` when internal packages should be skipped instead.
 
 Cache maintenance:
 
@@ -301,12 +317,15 @@ aminet can analyze Python dependencies from `requirements.txt` and `pyproject.to
 **Supported input formats:**
 - `requirements.txt` with pinned (`==`) or range specifiers
 - `pyproject.toml` with PEP 621 `[project].dependencies`
+- `poetry.lock`, `pdm.lock`, and `uv.lock` for `analyze`
 
 **Limitations:**
 - **Pinned versions (`==`) are scanned accurately.** Range specifiers resolve to the latest compatible version from PyPI, which may not match your actual environment. These are marked as best-effort in the analysis.
 - Dependencies with environment markers (e.g., `; python_version < '3.8'`) are skipped with a warning.
-- `poetry.lock`, `pdm.lock`, and `uv.lock` are not yet supported.
-- The `review` command does not yet support Python files.
+- Python lockfiles are currently `analyze` inputs, not standalone `review` inputs.
+- `review` supports `requirements.txt` and `pyproject.toml`. When a `pyproject.toml` review has an adjacent or explicit Python lockfile, aminet uses it to pin direct dependency versions where possible.
+
+For the longer-term compatibility target, see [`ROADMAP.md`](./ROADMAP.md).
 
 ## Requirements
 

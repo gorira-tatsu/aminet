@@ -13,6 +13,7 @@ export interface DependencyDiff {
   resolvedVulnerabilities: VulnChange[];
   newSecuritySignals: SecuritySignalChange[];
   resolvedSecuritySignals: SecuritySignalChange[];
+  notes?: string[];
   summary: DiffSummary;
 }
 

@@ -9,20 +9,28 @@ export interface LockfileEntry {
 }
 
 export interface LockfileResult {
-  format: "bun.lock" | "package-lock.json" | "pnpm-lock.yaml";
+  format:
+    | "bun.lock"
+    | "package-lock.json"
+    | "pnpm-lock.yaml"
+    | "poetry.lock"
+    | "pdm.lock"
+    | "uv.lock";
   packages: Map<string, string>; // name → exact version
 }
 
 /**
- * Try to find and parse a lockfile adjacent to the given package.json path.
+ * Try to find and parse a lockfile adjacent to the given manifest path.
  * Returns null if no lockfile found.
  */
-export async function tryParseLockfile(packageJsonPath: string): Promise<LockfileResult | null> {
-  const dir = packageJsonPath.replace(/[/\\][^/\\]+$/, "");
+export async function tryParseLockfile(
+  manifestPath: string,
+  ecosystem: "npm" | "pypi" = "npm",
+): Promise<LockfileResult | null> {
+  const dir = manifestPath.replace(/[/\\][^/\\]+$/, "");
   const prefix = dir ? `${dir}/` : "";
 
-  // Prefer pnpm first, then npm, then Bun compatibility
-  for (const lockfileName of ["pnpm-lock.yaml", "package-lock.json", "bun.lock"]) {
+  for (const lockfileName of getLockfileNames(ecosystem)) {
     const lockfilePath = `${prefix}${lockfileName}`;
     try {
       const content = await readFile(lockfilePath, "utf-8");
@@ -59,7 +67,17 @@ export function parseLockfile(
   if (name === "pnpm-lock.yaml") {
     return parsePnpmLock(content, workspacePath);
   }
+  if (name === "poetry.lock" || name === "pdm.lock" || name === "uv.lock") {
+    return parsePythonPackageLock(name, content);
+  }
   return null;
+}
+
+function getLockfileNames(ecosystem: "npm" | "pypi"): string[] {
+  if (ecosystem === "pypi") {
+    return ["uv.lock", "poetry.lock", "pdm.lock"];
+  }
+  return ["pnpm-lock.yaml", "package-lock.json", "bun.lock"];
 }
 
 function parsePnpmLock(content: string, workspacePath?: string): LockfileResult | null {
@@ -215,4 +233,27 @@ function extractNameFromNodeModulesPath(path: string): string | null {
 function normalizePnpmVersion(version: string | undefined): string | null {
   if (!version) return null;
   return version.split("(")[0] ?? null;
+}
+
+function parsePythonPackageLock(
+  format: "poetry.lock" | "pdm.lock" | "uv.lock",
+  content: string,
+): LockfileResult | null {
+  try {
+    const packages = new Map<string, string>();
+    const blocks = content.split(/\r?\n(?=\[\[package\]\])/g);
+
+    for (const block of blocks) {
+      if (!block.includes("[[package]]")) continue;
+      const nameMatch = block.match(/^\s*name\s*=\s*["']([^"']+)["']/m);
+      const versionMatch = block.match(/^\s*version\s*=\s*["']([^"']+)["']/m);
+      if (!nameMatch || !versionMatch) continue;
+      packages.set(nameMatch[1], versionMatch[1]);
+    }
+
+    return { format, packages };
+  } catch {
+    logger.warn(`Failed to parse ${format}`);
+    return null;
+  }
 }

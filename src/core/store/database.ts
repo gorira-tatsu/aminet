@@ -87,7 +87,7 @@ export function getDatabase(dbPath?: string): DatabaseLike {
 
     if (!warnedPersistentCacheFailure) {
       logger.warn(
-        `Persistent cache disabled for this run: ${persistentCacheFailureReason}. Continuing without cache.`,
+        `Persistent cache unavailable for this run: ${persistentCacheFailureReason}. Analyze and review will continue without the on-disk cache.`,
       );
       warnedPersistentCacheFailure = true;
     }

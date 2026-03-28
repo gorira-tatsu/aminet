@@ -75,7 +75,11 @@ function ensurePersistentCache(): boolean {
   }
 
   const reason = getPersistentCacheFailureReason() ?? "unknown error";
-  console.error(chalk.yellow(`Persistent cache unavailable: ${reason}`));
+  console.error(
+    chalk.yellow(
+      `Persistent cache unavailable: ${reason}. This cache command needs the on-disk database, but analyze/review still work without persistent cache.`,
+    ),
+  );
   process.exitCode = 1;
   return false;
 }
