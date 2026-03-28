@@ -1,0 +1,14 @@
+reviews:
+  review_status: false
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    base_branches:
+      - "^stg$"
+
+path_instructions:
+  - path: ".claude/skills/**"
+    instructions: |
+      Review skill trigger accuracy, workflow safety, branching-strategy alignment,
+      and whether the instructions create conflicting guidance or unnecessary context load.
