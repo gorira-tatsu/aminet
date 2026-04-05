@@ -69,8 +69,8 @@ Common inputs:
 - `comment-id`: override the stable PR comment identifier used for updates (default: manifest path)
 - `comment-prefix`: override the human-readable label shown in the PR comment title (default: manifest path)
 - `lockfile-path`: explicit path to lockfile (for monorepos, or to pin `pyproject.toml` review with `poetry.lock`, `pdm.lock`, or `uv.lock`)
-- `exclude-packages`: comma-separated packages to skip (supports wildcards like `@scope/*`)
-- `npm-token`: npm auth token for private registry access
+- `exclude-packages`: comma-separated packages to skip intentionally (supports wildcards like `@scope/*`)
+- `npm-token`: npm auth token for private registries when private packages should be analyzed
 
 Capability guide:
 
@@ -165,7 +165,33 @@ If you want explicit version pinning instead of relying on the action tag:
           deny-license: GPL-3.0,AGPL-3.0
 ```
 
-If your project has private packages, provide an npm token and optionally exclude packages that should not be analyzed:
+If your project has private packages, choose one of these modes:
+
+- authenticate private packages with `npm-token` / `NPM_TOKEN` when you want them included in analysis
+- skip internal packages with `exclude-packages` when they should be intentionally out of scope
+- combine both when some private packages should be analyzed and others should be skipped
+
+Action examples:
+
+Authenticate private packages:
+
+```yaml
+      - uses: gorira-tatsu/aminet@v0.1.3
+        with:
+          path: package.json
+          npm-token: ${{ secrets.NPM_TOKEN }}
+```
+
+Skip internal packages intentionally:
+
+```yaml
+      - uses: gorira-tatsu/aminet@v0.1.3
+        with:
+          path: package.json
+          exclude-packages: "@my-org/internal-*"
+```
+
+Authenticate and skip selected packages:
 
 ```yaml
       - uses: gorira-tatsu/aminet@v0.1.3
@@ -227,11 +253,12 @@ Capability summary:
 - `review` accepts `requirements.txt` and `pyproject.toml`, not standalone Python lockfiles.
 - the GitHub Action wraps `review`, so Python lockfiles are passed through `lockfile-path` rather than `path`.
 
-Review with private packages (skip or authenticate):
+Review with private packages:
 
 ```bash
-npx aminet review package.json --base HEAD~1 --exclude-packages "@scope/*"
 NPM_TOKEN=xxx npx aminet review package.json --base HEAD~1
+npx aminet review package.json --base HEAD~1 --exclude-packages "@scope/*"
+NPM_TOKEN=xxx npx aminet review package.json --base HEAD~1 --exclude-packages "@scope/internal-*"
 ```
 
 Generate a config file interactively:
