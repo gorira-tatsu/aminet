@@ -63,7 +63,7 @@ requests==2.31.0
 
     it("tracks skipped directives and best-effort requirements", () => {
       const result = parseRequirementsManifest(`-r base.txt\nrequests\nurllib3>=2.0\n`);
-      expect(result.skipped).toEqual([{ spec: "-r base.txt", reason: "directive" }]);
+      expect(result.skipped).toEqual([{ spec: "-r base.txt", reason: "directive", scope: "prod" }]);
       expect(result.bestEffortDependencies).toEqual(["requests", "urllib3"]);
     });
   });
@@ -143,17 +143,15 @@ dependencies = [
       expect(result.dependencies.get("flask")).toBe("3.0.0");
     });
 
-    it("returns empty maps for malformed TOML instead of throwing", () => {
-      const result = parsePyprojectDependencies(`
+    it("throws for malformed TOML", () => {
+      expect(() =>
+        parsePyprojectDependencies(`
 [project
 name = "broken"
 dependencies = [
   "requests>=2.20",
-`);
-      expect(result.name).toBeUndefined();
-      expect(result.version).toBeUndefined();
-      expect(result.dependencies.size).toBe(0);
-      expect(result.devDependencies.size).toBe(0);
+`),
+      ).toThrow("Failed to parse pyproject.toml");
     });
 
     it("parses dependency-groups as dev dependencies", () => {
@@ -221,6 +219,7 @@ ruff = { version = "==0.12.0" }
           name: "typing-extensions",
           spec: 'typing-extensions = { version = "^4.15.0", markers = "python_version < \'3.11\'" }',
           reason: "marker",
+          scope: "prod",
         },
       ]);
     });
@@ -264,6 +263,45 @@ internal-lib = { path = "../internal-lib", develop = true }
       expect(result.dependencies.get("pydantic")).toBe("");
       expect(result.dependencies.has("internal-lib")).toBe(false);
       expect(result.bestEffortDependencies).toContain("pydantic");
+    });
+
+    it("keeps non-marker Poetry array constraints when only some entries have markers", () => {
+      const result = parsePyprojectManifest(`
+[tool.poetry]
+name = "poetry-mixed"
+version = "1.0.0"
+
+[tool.poetry.dependencies]
+demo-lib = [
+  { version = "<2", markers = "python_version < '3.12'" },
+  { version = "^2.8" },
+]
+`);
+
+      expect(result.dependencies.get("demo-lib")).toBe("");
+      expect(result.bestEffortDependencies).toContain("demo-lib");
+      expect(result.skipped).toEqual([
+        {
+          name: "demo-lib",
+          spec: 'demo-lib = [{ version = "<2", markers = "python_version < \'3.12\'" }]',
+          reason: "marker",
+          scope: "prod",
+        },
+      ]);
+    });
+
+    it("ignores TOML date values when checking for tables", () => {
+      const result = parsePyprojectManifest(`
+[project]
+name = "dated"
+version = "1.0.0"
+dependencies = ["requests>=2.31"]
+
+[tool.example]
+released = 2026-04-06T07:30:00Z
+`);
+
+      expect(result.dependencies.get("requests")).toBe(">=2.31");
     });
 
     it("does not mark four-part pinned versions as best-effort", () => {

@@ -6,6 +6,7 @@ export interface SkippedPythonDependency {
   name?: string;
   spec: string;
   reason: "directive" | "marker";
+  scope?: "prod" | "dev";
 }
 
 export interface ParsedPythonManifest {
@@ -36,15 +37,15 @@ export function parseRequirementsManifest(content: string): ParsedPythonManifest
     if (line === "" || line.startsWith("#")) continue;
 
     if (line.startsWith("-r ") || line.startsWith("-r\t")) {
-      skipped.push({ spec: line, reason: "directive" });
+      skipped.push({ spec: line, reason: "directive", scope: "prod" });
       continue;
     }
     if (line.startsWith("-e ") || line.startsWith("-e\t")) {
-      skipped.push({ spec: line, reason: "directive" });
+      skipped.push({ spec: line, reason: "directive", scope: "prod" });
       continue;
     }
     if (line.startsWith("--")) {
-      skipped.push({ spec: line, reason: "directive" });
+      skipped.push({ spec: line, reason: "directive", scope: "prod" });
       continue;
     }
 
@@ -52,7 +53,7 @@ export function parseRequirementsManifest(content: string): ParsedPythonManifest
     const cleaned = commentIdx !== -1 ? line.slice(0, commentIdx).trim() : line;
     if (cleaned === "") continue;
 
-    addParsedDep(cleaned, packages, skipped);
+    addParsedDep(cleaned, packages, skipped, "prod");
   }
 
   return {
@@ -103,7 +104,7 @@ export function parsePyprojectManifest(content: string): ParsedPythonManifest {
     readStringPath(parsedToml, ["tool", "poetry", "version"]);
 
   for (const dep of readStringArrayPath(parsedToml, ["project", "dependencies"])) {
-    addParsedDep(dep, dependencies, skipped);
+    addParsedDep(dep, dependencies, skipped, "prod");
   }
 
   for (const group of DEV_LIKE_GROUPS) {
@@ -112,13 +113,13 @@ export function parsePyprojectManifest(content: string): ParsedPythonManifest {
       "optional-dependencies",
       group,
     ])) {
-      addParsedDep(dep, devDependencies, skipped);
+      addParsedDep(dep, devDependencies, skipped, "dev");
     }
     for (const dep of readDependencyGroup(
       group,
       readTablePath(parsedToml, ["dependency-groups"]),
     )) {
-      addParsedDep(dep, devDependencies, skipped);
+      addParsedDep(dep, devDependencies, skipped, "dev");
     }
   }
 
@@ -126,17 +127,20 @@ export function parsePyprojectManifest(content: string): ParsedPythonManifest {
     readTablePath(parsedToml, ["tool", "poetry", "dependencies"]),
     dependencies,
     skipped,
+    "prod",
   );
   parsePoetryDependencySection(
     readTablePath(parsedToml, ["tool", "poetry", "dev-dependencies"]),
     devDependencies,
     skipped,
+    "dev",
   );
   for (const group of DEV_LIKE_GROUPS) {
     parsePoetryDependencySection(
       readTablePath(parsedToml, ["tool", "poetry", "group", group, "dependencies"]),
       devDependencies,
       skipped,
+      "dev",
     );
   }
 
@@ -159,13 +163,14 @@ function addParsedDep(
   dep: string,
   map: Map<string, string>,
   skipped: SkippedPythonDependency[],
+  scope: "prod" | "dev",
 ): void {
   const parsed = parsePep508(dep);
   if (!parsed) return;
 
   const { name, versionSpec, hasMarker } = parsed;
   if (hasMarker) {
-    skipped.push({ name, spec: dep, reason: "marker" });
+    skipped.push({ name, spec: dep, reason: "marker", scope });
     return;
   }
 
@@ -176,13 +181,14 @@ function parsePoetryDependencySection(
   section: TomlTable | undefined,
   map: Map<string, string>,
   skipped: SkippedPythonDependency[],
+  scope: "prod" | "dev",
 ): void {
   if (!section) return;
 
   for (const [name, value] of Object.entries(section)) {
     if (name.toLowerCase() === "python") continue;
 
-    const parsed = parsePoetryDependencyValue(name, value, skipped);
+    const parsed = parsePoetryDependencyValue(name, value, skipped, scope);
     if (parsed !== null) {
       map.set(name, normalizePythonVersionSpec(parsed));
     }
@@ -193,12 +199,18 @@ function parsePoetryDependencyValue(
   name: string,
   value: TomlValue,
   skipped: SkippedPythonDependency[],
+  scope: "prod" | "dev",
 ): string | null {
   if (typeof value === "string") return value;
 
   if (isTomlTable(value)) {
     if (hasPoetryMarker(value)) {
-      skipped.push({ name, spec: renderPoetryDependencySpec(name, value), reason: "marker" });
+      skipped.push({
+        name,
+        spec: renderPoetryDependencySpec(name, value),
+        reason: "marker",
+        scope,
+      });
       return null;
     }
 
@@ -207,12 +219,25 @@ function parsePoetryDependencyValue(
   }
 
   if (Array.isArray(value)) {
-    if (value.some((entry) => isTomlTable(entry) && hasPoetryMarker(entry))) {
-      skipped.push({ name, spec: renderPoetryDependencySpec(name, value), reason: "marker" });
+    const markerEntries = value.filter((entry) => isTomlTable(entry) && hasPoetryMarker(entry));
+    const nonMarkerEntries = value.filter(
+      (entry) => !isTomlTable(entry) || !hasPoetryMarker(entry),
+    );
+
+    if (markerEntries.length > 0) {
+      skipped.push({
+        name,
+        spec: renderPoetryDependencySpec(name, markerEntries),
+        reason: "marker",
+        scope,
+      });
+    }
+
+    if (nonMarkerEntries.length === 0) {
       return null;
     }
 
-    if (value.some((entry) => typeof entry === "string" || hasPoetryVersion(entry))) {
+    if (nonMarkerEntries.some((entry) => typeof entry === "string" || hasPoetryVersion(entry))) {
       return "";
     }
   }
@@ -220,11 +245,12 @@ function parsePoetryDependencyValue(
   return null;
 }
 
-function safeParseToml(content: string): TomlTable | undefined {
+function safeParseToml(content: string): TomlTable {
   try {
     return parseToml(content);
-  } catch {
-    return undefined;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse pyproject.toml: ${message}`);
   }
 }
 
@@ -315,7 +341,12 @@ function renderTomlValue(value: TomlValue): string {
 }
 
 function isTomlTable(value: TomlValue | undefined): value is TomlTable {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function collectBestEffortDependencies(packages: Map<string, string>): string[] {

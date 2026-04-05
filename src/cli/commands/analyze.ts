@@ -315,11 +315,15 @@ async function analyzePythonFile(
         deps.set(name, ver);
       }
     }
-    analysisNotes.push(...buildPythonManifestNotes(parsed, { mode: "analyze" }));
+    analysisNotes.push(
+      ...buildPythonManifestNotes(parsed, { includeDev: options.dev, mode: "analyze" }),
+    );
   } else if (fileBaseName === "requirements.txt") {
     const parsed = parseRequirementsManifest(content);
     deps = new Map(parsed.dependencies);
-    analysisNotes.push(...buildPythonManifestNotes(parsed, { mode: "analyze" }));
+    analysisNotes.push(
+      ...buildPythonManifestNotes(parsed, { includeDev: options.dev, mode: "analyze" }),
+    );
   } else if (
     fileBaseName === "poetry.lock" ||
     fileBaseName === "pdm.lock" ||
@@ -345,7 +349,9 @@ async function analyzePythonFile(
         deps.set(name, ver);
       }
     }
-    analysisNotes.push(...buildPythonManifestNotes(parsed, { mode: "analyze" }));
+    analysisNotes.push(
+      ...buildPythonManifestNotes(parsed, { includeDev: options.dev, mode: "analyze" }),
+    );
   } else {
     deps = parseRequirementsTxt(content);
   }

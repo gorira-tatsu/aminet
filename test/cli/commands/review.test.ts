@@ -177,7 +177,7 @@ describe("python review manifest helpers", () => {
       "Skipped marker-gated Python dependencies: fastapi. Environment-specific requirements are not evaluated.",
     );
     expect(parsed.notes).toContain(
-      "Ignored requirements.txt directives: -r base.txt. Only direct package specifiers are analyzed.",
+      "Ignored requirements.txt directives: -r base.txt; only direct package specifiers are analyzed.",
     );
   });
 
