@@ -164,17 +164,20 @@ describe("python review manifest helpers", () => {
   it("builds review notes for requirements.txt manifests", () => {
     const parsed = parsePythonReviewManifest(
       "requirements.txt",
-      'requests==2.31.0\nfastapi>=0.116 ; python_version >= "3.10"\nurllib3\n',
+      '-r base.txt\nrequests==2.31.0\nfastapi>=0.116 ; python_version >= "3.10"\nurllib3\n',
       false,
     );
 
     expect(parsed.dependencies.get("requests")).toBe("2.31.0");
     expect(parsed.dependencies.get("urllib3")).toBe("");
     expect(parsed.notes).toContain(
-      "Best-effort resolution was used for: urllib3. Unpinned Python specs are reviewed against the latest compatible PyPI release and may not match the exact environment.",
+      "Best-effort Python resolution: urllib3. Unpinned direct specs use the latest compatible PyPI release as a stand-in and may not match the exact environment.",
     );
     expect(parsed.notes).toContain(
-      "Skipped marker-gated Python dependencies: fastapi. Environment-specific requirements are not resolved in review mode.",
+      "Skipped marker-gated Python dependencies: fastapi. Environment-specific requirements are not evaluated.",
+    );
+    expect(parsed.notes).toContain(
+      "Ignored requirements.txt directives: -r base.txt. Only direct package specifiers are analyzed.",
     );
   });
 
@@ -218,8 +221,8 @@ dev = ["pytest>=8.0"]
     );
 
     expect(notes).toEqual([
-      "Best-effort resolution was used for: urllib3. Unpinned Python specs are reviewed against the latest compatible PyPI release and may not match the exact environment.",
-      "Skipped marker-gated Python dependencies: typing-extensions. Environment-specific requirements are not resolved in review mode.",
+      "Best-effort Python resolution: urllib3. Unpinned direct specs use the latest compatible PyPI release as a stand-in and may not match the exact environment.",
+      "Skipped marker-gated Python dependencies: typing-extensions. Environment-specific requirements are not evaluated.",
       "Included 1 Python optional/dev dependencies in review mode.",
     ]);
   });

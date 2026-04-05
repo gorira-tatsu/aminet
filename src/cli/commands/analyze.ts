@@ -13,6 +13,7 @@ import type { DependencyGraph } from "../../core/graph/types.js";
 import { checkDenyList } from "../../core/license/deny-list.js";
 import { getLicenseAlternatives } from "../../core/license/spdx.js";
 import { parseLockfile, tryParseLockfile } from "../../core/lockfile/parser.js";
+import { buildPythonManifestNotes } from "../../core/lockfile/python-notes.js";
 import {
   parsePyprojectManifest,
   parseRequirementsManifest,
@@ -314,11 +315,11 @@ async function analyzePythonFile(
         deps.set(name, ver);
       }
     }
-    analysisNotes.push(...buildPythonAnalysisNotes(parsed.skipped, parsed.bestEffortDependencies));
+    analysisNotes.push(...buildPythonManifestNotes(parsed, { mode: "analyze" }));
   } else if (fileBaseName === "requirements.txt") {
     const parsed = parseRequirementsManifest(content);
     deps = new Map(parsed.dependencies);
-    analysisNotes.push(...buildPythonAnalysisNotes(parsed.skipped, parsed.bestEffortDependencies));
+    analysisNotes.push(...buildPythonManifestNotes(parsed, { mode: "analyze" }));
   } else if (
     fileBaseName === "poetry.lock" ||
     fileBaseName === "pdm.lock" ||
@@ -344,7 +345,7 @@ async function analyzePythonFile(
         deps.set(name, ver);
       }
     }
-    analysisNotes.push(...buildPythonAnalysisNotes(parsed.skipped, parsed.bestEffortDependencies));
+    analysisNotes.push(...buildPythonManifestNotes(parsed, { mode: "analyze" }));
   } else {
     deps = parseRequirementsTxt(content);
   }
@@ -755,31 +756,6 @@ function writeGitHubSummary(report: Report): void {
   } catch {
     // Non-critical
   }
-}
-
-function buildPythonAnalysisNotes(
-  skipped: Array<{ name?: string; spec: string; reason: "directive" | "marker" }>,
-  bestEffortDependencies: string[],
-): string[] {
-  const notes: string[] = [];
-  const markerSkipped = skipped.filter((entry) => entry.reason === "marker");
-
-  if (bestEffortDependencies.length > 0) {
-    notes.push(
-      `Best-effort resolution was used for: ${bestEffortDependencies.join(", ")}. Unpinned Python specs resolve against the latest compatible PyPI release and may not match the exact environment.`,
-    );
-  }
-
-  if (markerSkipped.length > 0) {
-    const names = markerSkipped
-      .map((entry) => entry.name ?? entry.spec)
-      .filter((value, index, all) => all.indexOf(value) === index);
-    notes.push(
-      `Skipped marker-gated Python dependencies: ${names.join(", ")}. Environment-specific requirements are not resolved in file-based analysis.`,
-    );
-  }
-
-  return notes;
 }
 
 function parsePackageSpec(spec: string): {

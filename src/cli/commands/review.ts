@@ -6,6 +6,7 @@ import { buildReportForPackageSpec } from "../../core/analyzer.js";
 import { loadConfig } from "../../core/config/loader.js";
 import type { DependencyDiff } from "../../core/diff/types.js";
 import { parseLockfile } from "../../core/lockfile/parser.js";
+import { buildPythonManifestNotes } from "../../core/lockfile/python-notes.js";
 import {
   type ParsedPythonManifest,
   parsePyprojectManifest,
@@ -294,31 +295,10 @@ export function buildPythonReviewNotes(
   parsed: ParsedPythonManifest,
   includeDev: boolean | undefined,
 ): string[] {
-  const notes: string[] = [];
-
-  if (parsed.bestEffortDependencies.length > 0) {
-    notes.push(
-      `Best-effort resolution was used for: ${parsed.bestEffortDependencies.join(", ")}. Unpinned Python specs are reviewed against the latest compatible PyPI release and may not match the exact environment.`,
-    );
-  }
-
-  const markerSkipped = parsed.skipped.filter((entry) => entry.reason === "marker");
-  if (markerSkipped.length > 0) {
-    const names = markerSkipped
-      .map((entry) => entry.name ?? entry.spec)
-      .filter((value, index, all) => all.indexOf(value) === index);
-    notes.push(
-      `Skipped marker-gated Python dependencies: ${names.join(", ")}. Environment-specific requirements are not resolved in review mode.`,
-    );
-  }
-
-  if (includeDev && parsed.devDependencies.size > 0) {
-    notes.push(
-      `Included ${parsed.devDependencies.size} Python optional/dev dependencies in review mode.`,
-    );
-  }
-
-  return notes;
+  return buildPythonManifestNotes(parsed, {
+    includeDev,
+    mode: "review",
+  });
 }
 
 async function loadFileAtRefOrPath(filePath: string, ref?: string): Promise<string> {
