@@ -316,12 +316,17 @@ aminet can analyze Python dependencies from `requirements.txt` and `pyproject.to
 
 **Supported input formats:**
 - `requirements.txt` with pinned (`==`) or range specifiers
-- `pyproject.toml` with PEP 621 `[project].dependencies`
+- `pyproject.toml` with these supported scopes:
+  - PEP 621 `[project].dependencies`
+  - `[project.optional-dependencies]` for dev-like groups: `dev`, `test`, `tests`, `docs`, `doc`, `lint`, `typing`, `typecheck`
+  - `[dependency-groups]` for the same dev-like groups, including `include-group`
+  - Poetry `[tool.poetry.dependencies]`, `[tool.poetry.dev-dependencies]`, and `[tool.poetry.group.<name>.dependencies]`
 - `poetry.lock`, `pdm.lock`, and `uv.lock` for `analyze`
 
 **Limitations:**
 - **Pinned versions (`==`) are scanned accurately.** Range specifiers resolve to the latest compatible version from PyPI, which may not match your actual environment. These are marked as best-effort in the analysis.
 - Dependencies with environment markers (e.g., `; python_version < '3.8'`) are skipped with a warning.
+- Poetry dependencies without a version-bearing specifier, such as local `path` or `git` sources, are currently out of scope for review parsing.
 - Python lockfiles are currently `analyze` inputs, not standalone `review` inputs.
 - `review` supports `requirements.txt` and `pyproject.toml`. When a `pyproject.toml` review has an adjacent or explicit Python lockfile, aminet uses it to pin direct dependency versions where possible.
 

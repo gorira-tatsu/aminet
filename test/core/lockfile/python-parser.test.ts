@@ -173,6 +173,25 @@ docs = ["mkdocs==1.6.0"]
       expect(result.devDependencies.get("mkdocs")).toBe("1.6.0");
     });
 
+    it("follows include-group references inside dependency-groups", () => {
+      const result = parsePyprojectManifest(`
+[project]
+name = "dep-groups-include"
+version = "1.0.0"
+dependencies = ["requests>=2.31"]
+
+[dependency-groups]
+docs = ["mkdocs>=1.6.0", { include-group = "typing" }]
+typing = ["mypy>=1.11.0"]
+qa = ["bandit>=1.8.0"]
+`);
+
+      expect(result.dependencies.get("requests")).toBe(">=2.31");
+      expect(result.devDependencies.get("mkdocs")).toBe(">=1.6.0");
+      expect(result.devDependencies.get("mypy")).toBe(">=1.11.0");
+      expect(result.devDependencies.has("bandit")).toBe(false);
+    });
+
     it("parses Poetry dependencies and groups", () => {
       const result = parsePyprojectManifest(`
 [tool.poetry]
@@ -223,6 +242,28 @@ black = "25.1.0"
       expect(result.dependencies.get("fastapi")).toBe("^0.116.0");
       expect(result.devDependencies.get("pytest")).toBe("^8.4.0");
       expect(result.devDependencies.get("black")).toBe("25.1.0");
+    });
+
+    it("treats Poetry multi-constraint arrays as best-effort dependencies", () => {
+      const result = parsePyprojectManifest(`
+[tool.poetry]
+name = "poetry-constraints"
+version = "1.0.0"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+httpx = { version = "^0.28.1", extras = ["http2"] }
+pydantic = [
+  { version = "<2", python = "<3.12" },
+  { version = "^2.8", python = ">=3.12" },
+]
+internal-lib = { path = "../internal-lib", develop = true }
+`);
+
+      expect(result.dependencies.get("httpx")).toBe("^0.28.1");
+      expect(result.dependencies.get("pydantic")).toBe("");
+      expect(result.dependencies.has("internal-lib")).toBe(false);
+      expect(result.bestEffortDependencies).toContain("pydantic");
     });
 
     it("does not mark four-part pinned versions as best-effort", () => {

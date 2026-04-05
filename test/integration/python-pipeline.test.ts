@@ -156,6 +156,31 @@ describe("Python parsing: Black pyproject.toml (extras syntax)", () => {
   });
 });
 
+describe("Python parsing: realistic pyproject.toml (mixed sections)", () => {
+  const content = loadText("realistic-pyproject.toml");
+  const parsed = parsePyprojectDependencies(content);
+
+  it("extracts project metadata from the supported scopes", () => {
+    expect(parsed.name).toBe("realistic-app");
+    expect(parsed.version).toBe("0.2.0");
+  });
+
+  it("collects production dependencies despite unrelated sections", () => {
+    expect(parsed.dependencies.get("httpx")).toBe(">=0.27");
+    expect(parsed.dependencies.get("sqlalchemy")).toBe(">=2.0");
+  });
+
+  it("collects dev-like dependency groups, including include-group entries", () => {
+    expect(parsed.devDependencies.get("pytest")).toBe(">=8.3");
+    expect(parsed.devDependencies.get("coverage")).toBe(">=7.6");
+    expect(parsed.devDependencies.get("ruff")).toBe("0.12.0");
+    expect(parsed.devDependencies.get("mkdocs-material")).toBe(">=9.5");
+    expect(parsed.devDependencies.get("mypy")).toBe(">=1.11");
+    expect(parsed.devDependencies.has("pre-commit")).toBe(false);
+    expect(parsed.devDependencies.has("bandit")).toBe(false);
+  });
+});
+
 // ─── requirements.txt parsing tests against real OSS files ───────────
 
 describe("Python parsing: httpx requirements.txt", () => {
