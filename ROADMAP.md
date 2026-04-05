@@ -18,10 +18,23 @@
 
 ## Python lockfile support strategy
 
-- `requirements.txt` and `pyproject.toml` are the primary review inputs for Python projects.
-- `poetry.lock`, `pdm.lock`, and `uv.lock` are supported for `analyze`.
-- When a `pyproject.toml` review has an adjacent or explicit Python lockfile, aminet uses it to pin direct dependency versions where possible.
-- Python lockfiles are not first-class `review` inputs yet; the review contract remains manifest-first so the changed direct dependencies are explicit in the PR diff.
+Support matrix:
+
+| Input | `analyze` | `review` | GitHub Action |
+|-------|-----------|----------|---------------|
+| `requirements.txt` | supported | supported | supported through `path` |
+| `pyproject.toml` | supported | supported | supported through `path` |
+| `poetry.lock` | supported | not a standalone input | use through `lockfile-path` when reviewing `pyproject.toml` |
+| `pdm.lock` | supported | not a standalone input | use through `lockfile-path` when reviewing `pyproject.toml` |
+| `uv.lock` | supported | not a standalone input | use through `lockfile-path` when reviewing `pyproject.toml` |
+
+Sequencing rules:
+
+- `requirements.txt` and `pyproject.toml` remain the primary review inputs for Python projects.
+- Python lockfiles are first-class for `analyze`, because they pin direct dependency versions without depending on a Git diff.
+- Python lockfiles are not first-class `review` inputs. The review contract stays manifest-first so the changed direct dependencies remain explicit in the PR diff.
+- When a `pyproject.toml` review has an adjacent or explicit Python lockfile, aminet uses it only to pin direct dependency versions where possible.
+- The GitHub Action wraps `review`, so Python lockfiles are passed through `lockfile-path` instead of `path`.
 
 ## 1.0 release criteria
 
