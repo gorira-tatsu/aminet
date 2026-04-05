@@ -38,8 +38,11 @@ describe("cache command degraded mode", () => {
 
     await cacheStatsCommand();
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Persistent cache unavailable: native bindings unavailable"),
+      expect.stringContaining(
+        "Persistent cache is unavailable in this environment: native bindings unavailable",
+      ),
     );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("DB-backed caching is disabled"));
     expect(getStoreStats).not.toHaveBeenCalled();
 
     process.exitCode = 0;
