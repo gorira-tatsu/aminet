@@ -7,6 +7,12 @@ inputs:
   path:
     description: "Path to the dependency manifest to review (package.json, requirements.txt, or pyproject.toml)"
     default: "package.json"
+  comment-id:
+    description: "Stable identifier used to match and update the PR comment for this manifest (defaults to the manifest path)"
+    required: false
+  comment-prefix:
+    description: "Display label shown in the PR comment title (defaults to the manifest path)"
+    required: false
   depth:
     description: "Maximum dependency depth"
     required: false
@@ -66,6 +72,12 @@ runs:
 
         if [ -n "${{ inputs.depth }}" ]; then
           ARGS+=("--depth" "${{ inputs.depth }}")
+        fi
+        if [ -n "${{ inputs.comment-id }}" ]; then
+          ARGS+=("--comment-id" "${{ inputs.comment-id }}")
+        fi
+        if [ -n "${{ inputs.comment-prefix }}" ]; then
+          ARGS+=("--comment-prefix" "${{ inputs.comment-prefix }}")
         fi
         if [ -n "${{ inputs.deny-license }}" ]; then
           ARGS+=("--deny-license" "${{ inputs.deny-license }}")

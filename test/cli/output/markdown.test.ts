@@ -33,6 +33,21 @@ describe("renderMarkdownComment", () => {
     expect(md).toContain("<!-- aminet-review -->");
   });
 
+  it("renders a compact empty state for unchanged manifests", () => {
+    const diff = makeEmptyDiff();
+    const md = renderMarkdownComment(diff, {
+      marker: "<!-- aminet-review:id=apps%2Fbackend%2Fpackage.json -->",
+      targetPath: "apps/backend/package.json",
+      label: "Backend",
+    });
+
+    expect(md).toContain("## aminet Dependency Review — `Backend`");
+    expect(md).toContain("Target: `apps/backend/package.json`");
+    expect(md).toContain("**Summary**: No direct dependency changes detected.");
+    expect(md).not.toContain("| Metric | Count |");
+    expect(md).not.toContain("<details>");
+  });
+
   it("includes summary table", () => {
     const diff = makeEmptyDiff();
     diff.summary.addedCount = 3;
@@ -63,6 +78,7 @@ describe("renderMarkdownComment", () => {
       },
     ];
     const md = renderMarkdownComment(diff);
+    expect(md).toContain("<details>");
     expect(md).toContain("| Added | 3 |");
     expect(md).toContain("## aminet Dependency Review");
   });

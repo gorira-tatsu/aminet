@@ -66,6 +66,8 @@ Common inputs:
 - `fail-on-vuln`: fail the job at or above a severity threshold
 - `security`: enable deeper security checks
 - `version`: pin the published `aminet` CLI version explicitly
+- `comment-id`: override the stable PR comment identifier used for updates (default: manifest path)
+- `comment-prefix`: override the human-readable label shown in the PR comment title (default: manifest path)
 - `lockfile-path`: explicit path to lockfile (for monorepos, or to pin `pyproject.toml` review with `poetry.lock`, `pdm.lock`, or `uv.lock`)
 - `exclude-packages`: comma-separated packages to skip (supports wildcards like `@scope/*`)
 - `npm-token`: npm auth token for private registry access
@@ -78,6 +80,26 @@ For monorepo usage where `package.json` is in a sub-package:
           path: packages/frontend/package.json
           lockfile-path: pnpm-lock.yaml
 ```
+
+For matrix-based monorepo review, each manifest can keep its own compact PR comment while remaining easy to identify:
+
+```yaml
+strategy:
+  matrix:
+    path:
+      - package.json
+      - apps/backend/package.json
+      - apps/frontend/package.json
+
+steps:
+  - uses: gorira-tatsu/aminet@v0.3.0
+    with:
+      path: ${{ matrix.path }}
+      comment-prefix: ${{ matrix.path }}
+      security: "true"
+```
+
+By default, aminet uses the manifest path as both the comment update key and the displayed label. Use `comment-id` only when you need to override the update key, and `comment-prefix` when you want a shorter or friendlier title while still showing the actual manifest path inside the comment body.
 
 The review command automatically walks up parent directories to find lockfiles and reads the correct workspace section from pnpm lockfiles. Use `lockfile-path` when auto-detection does not work for your layout.
 
@@ -274,11 +296,24 @@ npx aminet analyze express@4.21.2 --notices
 Representative review mode:
 
 ```text
-## aminet Dependency Review
+## aminet Dependency Review — `apps/frontend/package.json`
+Target: `apps/frontend/package.json`
+
+**Summary**: 1 updated dependency, 2 new vulnerabilities, 1 license change
+
+**Risk Level**: :red_circle: Critical
+
+### Key Alerts
+
+- 2 critical/high vulnerability alerts introduced
+- 1 dependency license alerts require review
+
+<details>
+<summary>Detailed review</summary>
 
 | Metric | Count |
 |--------|-------|
-| Added | 1 |
+| Added | 0 |
 | Removed | 0 |
 | Updated | 1 |
 | New Vulnerabilities | 2 |
@@ -291,11 +326,7 @@ Representative review mode:
 | Package | Version | Severity | Advisory | Fixed | Source | Summary |
 |---------|---------|----------|----------|-------|--------|---------|
 | minimist | 1.2.8 | CRITICAL | GHSA-... | 1.2.6 | osv | Prototype Pollution |
-
-### Updated Dependencies
-| Package | Declared | Resolved | License |
-|---------|----------|----------|---------|
-| react | ^18.2.0 -> ^18.3.0 | 18.3.1 -> 18.3.2 | MIT |
+</details>
 ```
 
 ## Output modes

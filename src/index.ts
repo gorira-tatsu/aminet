@@ -103,6 +103,8 @@ program
   .option("--pr-number <number>", "GitHub PR number for comment posting")
   .option("--repo <owner/name>", "GitHub repository (e.g., user/repo)")
   .option("--update-comment", "Update existing aminet comment instead of creating new")
+  .option("--comment-id <id>", "Stable comment identifier for PR comment updates")
+  .option("--comment-prefix <label>", "Display label for PR comment titles")
   .option("-d, --depth <number>", "Maximum dependency depth", parseInt)
   .option("-c, --concurrency <number>", "Maximum concurrent requests", parseInt)
   .option("--no-dev", "Exclude devDependencies from review")
