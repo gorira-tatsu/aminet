@@ -27,19 +27,36 @@
 
 aminet should not be considered `1.0` until all of the following are true:
 
-1. Core workflows are stable:
-   - npm `analyze` and `review`
-   - Python `analyze` for manifests and supported lockfiles
-   - Python `review` for `requirements.txt` and `pyproject.toml`
-2. Output contracts are stable:
-   - JSON shape is treated as a compatibility surface
-   - review comment sections and key fields are consistent across npm and PyPI
-   - unsupported and best-effort cases are called out explicitly instead of failing silently
-3. Operational behavior is stable:
-   - private registry authentication and skip-pattern guidance is documented
-   - degraded cache mode is understandable and non-fatal for analyze/review
-   - release notes and action examples stay aligned with shipped behavior
+1. Minimum supported workflows are stable:
+   - npm `analyze` and `review` for `package.json`, including supported npm lockfiles for pinned versions
+   - Python `analyze` for `requirements.txt`, `pyproject.toml`, `poetry.lock`, `pdm.lock`, and `uv.lock`
+   - Python `review` for `requirements.txt` and `pyproject.toml`, with Python lockfiles used only to pin direct dependency versions
+   - the GitHub Action documents and supports the same manifest-first review contract as the CLI
+2. Compatibility guarantees for `1.x` are explicit:
+   - documented CLI flags and GitHub Action inputs are treated as stable within `1.x`
+   - JSON output keys and the meaning of existing fields are treated as a compatibility surface
+   - PR review comments may gain additive detail, but the summary, risk level, and primary change sections remain stable
+   - best-effort resolution, skipped inputs, unavailable registries, and degraded cache behavior are surfaced explicitly instead of failing silently
+3. Documentation and operations are release-grade:
+   - `README.md`, `ROADMAP.md`, and `action.yml` examples agree on supported workflows and constraints
+   - private registry authentication versus intentional exclusion is documented for both CLI and Action usage
+   - release notes call out user-visible changes to CLI behavior, JSON output, and PR comment structure
 4. Validation is broad enough:
-   - regression coverage exists for npm and Python review flows
-   - parser fixtures cover realistic `pyproject.toml` and lockfile layouts
-   - the default `pnpm build`, `pnpm lint`, and `pnpm test` workflow is green before release
+   - regression coverage exists for npm and Python `analyze` and `review` flows
+   - parser fixtures cover realistic `package.json`, `requirements.txt`, `pyproject.toml`, and supported lockfile layouts
+   - PR comment rendering and output-format tests cover the documented compatibility surface
+   - the default `pnpm build`, `pnpm lint`, and `pnpm test` workflow is green before a `1.0` release candidate
+
+## 1.0 graduation checklist
+
+- [ ] Supported workflow matrix is documented and matches shipped behavior
+- [ ] CLI flags, Action inputs, and JSON fields intended for `1.x` stability are called out in docs
+- [ ] npm and Python review output use the same contract for risk summaries, notes, and unsupported-case messaging
+- [ ] private registry and degraded-cache behavior are documented and covered by regression tests
+- [ ] release automation and release notes are ready to communicate breaking changes before `1.0`
+
+## Post-1.0 candidates
+
+- standalone Python lockfile review inputs, if the product contract expands beyond manifest-first review
+- deeper ecosystem parity work that is helpful but not required for the initial `1.0` guarantee
+- additional registries, SBOM/reporting formats, and supply-chain checks beyond the documented `1.0` scope

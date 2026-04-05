@@ -16,6 +16,18 @@ Roadmap and 1.0 criteria live in [`ROADMAP.md`](./ROADMAP.md).
 - Early project, pre-`1.0`
 - License: MIT
 - CLI and review output may still evolve
+- The intended `1.x` guarantees are tracked in [`ROADMAP.md`](./ROADMAP.md)
+
+## 1.0 Target
+
+Before `1.0`, aminet is still allowed to refine CLI behavior and review presentation. The `1.0` target is to make the following contract explicit and stable:
+
+- minimum workflows: npm `analyze`/`review`, Python `analyze` for manifests and supported lockfiles, and Python `review` for `requirements.txt`/`pyproject.toml`
+- compatibility surface: documented CLI flags, GitHub Action inputs, JSON fields, and the primary PR comment sections
+- operational expectations: explicit messaging for best-effort resolution, skipped inputs, private registries, and degraded cache mode
+- release gate: documentation, regression tests, and release notes stay aligned with shipped behavior
+
+The longer checklist and post-`1.0` candidates live in [`ROADMAP.md`](./ROADMAP.md).
 
 ## GitHub Action
 
