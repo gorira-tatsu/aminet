@@ -229,6 +229,23 @@ export function buildPrivateRegistryGuidance(
   return lines;
 }
 
+export function applyPrivateRegistryModeSelection(
+  config: AmiConfig,
+  mode: PrivateRegistryMode,
+): AmiConfig {
+  const next: AmiConfig = { ...config };
+
+  if (mode === "auth" || mode === "none") {
+    next.excludePackages = [];
+  }
+
+  if (mode === "exclude" || mode === "none") {
+    delete next.npmToken;
+  }
+
+  return next;
+}
+
 function formatConfig(config: AmiConfig, redactSecrets = true): string {
   // Remove fields with empty arrays or undefined values for cleaner output
   const clean: Record<string, unknown> = {};
@@ -336,9 +353,6 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
 
     const config: AmiConfig = {};
     const privateRegistryMode = await promptPrivateRegistryMode(rl, existingConfig);
-    if (!shouldPromptForExcludePackages(privateRegistryMode)) {
-      config.excludePackages = [];
-    }
 
     for (const field of CONFIG_FIELDS) {
       if (field.key === "excludePackages" && !shouldPromptForExcludePackages(privateRegistryMode)) {
@@ -411,7 +425,8 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
       }
     }
 
-    const finalConfig = existingConfig ? mergeConfigs(config, existingConfig) : config;
+    const mergedConfig = existingConfig ? mergeConfigs(config, existingConfig) : config;
+    const finalConfig = applyPrivateRegistryModeSelection(mergedConfig, privateRegistryMode);
     const finalPrivateRegistryMode = resolvePrivateRegistryMode(privateRegistryMode, finalConfig);
 
     console.log(chalk.bold("\n  Generated config:\n"));

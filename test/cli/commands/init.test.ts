@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyPrivateRegistryModeSelection,
   buildDefaultConfig,
   buildPrivateRegistryGuidance,
   getPrivateRegistryModeFallback,
@@ -163,6 +164,36 @@ describe("init command helpers", () => {
         "- Use excludePackages when internal packages should be skipped instead.",
         "- Current exclude patterns: @internal/*",
       ]);
+    });
+
+    it("applies mode selection to merged auth and exclude settings", () => {
+      expect(
+        applyPrivateRegistryModeSelection(
+          { npmToken: "tok_123", excludePackages: ["@internal/*"] },
+          "auth",
+        ),
+      ).toEqual({
+        npmToken: "tok_123",
+        excludePackages: [],
+      });
+
+      expect(
+        applyPrivateRegistryModeSelection(
+          { npmToken: "tok_123", excludePackages: ["@internal/*"] },
+          "exclude",
+        ),
+      ).toEqual({
+        excludePackages: ["@internal/*"],
+      });
+
+      expect(
+        applyPrivateRegistryModeSelection(
+          { npmToken: "tok_123", excludePackages: ["@internal/*"] },
+          "none",
+        ),
+      ).toEqual({
+        excludePackages: [],
+      });
     });
   });
 });
