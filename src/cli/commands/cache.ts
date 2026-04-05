@@ -77,7 +77,7 @@ function ensurePersistentCache(): boolean {
   const reason = getPersistentCacheFailureReason() ?? "unknown error";
   console.error(
     chalk.yellow(
-      `Persistent cache is unavailable in this environment: ${reason}. Cache subcommands need the on-disk database. Analyze and review still work in ephemeral mode, but cache stats/prune/clear are disabled.`,
+      `Persistent cache is unavailable in this environment: ${reason}. Cache subcommands need the on-disk database. Analyze and review still work, but DB-backed caching is disabled in this environment, so cache stats/prune/clear are unavailable.`,
     ),
   );
   process.exitCode = 1;

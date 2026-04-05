@@ -204,7 +204,7 @@ npx aminet cache stats
 npx aminet cache prune
 ```
 
-If native SQLite bindings are unavailable, `analyze` and `review` fall back to an ephemeral in-memory cache for the current run. `aminet cache ...` subcommands still require the on-disk database and will exit non-zero in that environment.
+If native SQLite bindings are unavailable, `analyze` and `review` still run, but aminet disables DB-backed caching in that environment. `aminet cache ...` subcommands still require the on-disk database and will exit non-zero until persistent cache support is available.
 
 ## CLI commands
 

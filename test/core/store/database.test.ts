@@ -12,7 +12,7 @@ describe("database degraded mode", () => {
     vi.doUnmock("../../../src/utils/logger.js");
   });
 
-  it("warns once and continues in ephemeral mode when persistent cache init fails", async () => {
+  it("warns once and continues without persistent storage when cache init fails", async () => {
     const warn = vi.fn();
 
     vi.doMock("../../../src/core/store/adapter.js", () => ({
@@ -44,7 +44,10 @@ describe("database degraded mode", () => {
     expect(isPersistentCacheAvailable()).toBe(false);
     expect(getPersistentCacheFailureReason()).toBe("native bindings unavailable");
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("ephemeral mode"));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("continue without persistent storage"),
+    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("DB-backed caching is disabled"));
 
     closeDatabase();
   });
