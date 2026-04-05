@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyPrivateRegistryModeSelection,
   buildDefaultConfig,
+  buildPrivateRegistryGuidance,
+  getPrivateRegistryModeFallback,
   mergeConfigs,
   normalizeThresholdInput,
   parseBooleanInput,
+  parsePrivateRegistryModeInput,
+  resolvePrivateRegistryMode,
+  shouldPromptForExcludePackages,
 } from "../../../src/cli/commands/init.js";
 
 describe("init command helpers", () => {
@@ -94,6 +100,100 @@ describe("init command helpers", () => {
     it("rejects invalid threshold values", () => {
       const allowed = new Set(["low", "medium", "high", "critical"]);
       expect(normalizeThresholdInput("hgh", allowed)).toBeNull();
+    });
+  });
+
+  describe("private registry helpers", () => {
+    it("parses private registry mode shortcuts", () => {
+      expect(parsePrivateRegistryModeInput("a", "none")).toBe("auth");
+      expect(parsePrivateRegistryModeInput("exclude", "none")).toBe("exclude");
+      expect(parsePrivateRegistryModeInput("both", "none")).toBe("both");
+      expect(parsePrivateRegistryModeInput("", "none")).toBe("none");
+      expect(parsePrivateRegistryModeInput("weird", "none")).toBeNull();
+    });
+
+    it("prompts for excludePackages only when exclusion is selected", () => {
+      expect(shouldPromptForExcludePackages("auth")).toBe(false);
+      expect(shouldPromptForExcludePackages("none")).toBe(false);
+      expect(shouldPromptForExcludePackages("exclude")).toBe(true);
+      expect(shouldPromptForExcludePackages("both")).toBe(true);
+    });
+
+    it("resolves the effective private registry mode from the final config", () => {
+      expect(resolvePrivateRegistryMode("auth", {})).toBe("auth");
+      expect(resolvePrivateRegistryMode("auth", { excludePackages: ["@internal/*"] })).toBe("both");
+      expect(resolvePrivateRegistryMode("none", { npmToken: "tok_123" })).toBe("auth");
+      expect(
+        resolvePrivateRegistryMode("none", {
+          npmToken: "tok_123",
+          excludePackages: ["@internal/*"],
+        }),
+      ).toBe("both");
+      expect(resolvePrivateRegistryMode("exclude", {})).toBe("none");
+      expect(resolvePrivateRegistryMode("exclude", { excludePackages: ["@internal/*"] })).toBe(
+        "exclude",
+      );
+      expect(resolvePrivateRegistryMode("both", {})).toBe("auth");
+      expect(resolvePrivateRegistryMode("none", { excludePackages: ["@internal/*"] })).toBe(
+        "exclude",
+      );
+    });
+
+    it("derives the prompt fallback from existing auth and exclude config", () => {
+      expect(getPrivateRegistryModeFallback()).toBe("none");
+      expect(getPrivateRegistryModeFallback({ excludePackages: ["@internal/*"] })).toBe("exclude");
+      expect(getPrivateRegistryModeFallback({ npmToken: "tok_123" })).toBe("auth");
+      expect(
+        getPrivateRegistryModeFallback({
+          npmToken: "tok_123",
+          excludePackages: ["@internal/*"],
+        }),
+      ).toBe("both");
+    });
+
+    it("builds targeted guidance without embedding secrets", () => {
+      expect(buildPrivateRegistryGuidance({}, "none")).toEqual([
+        "Private registry guidance:",
+        "- No private package handling is configured yet.",
+        "- Use NPM_TOKEN for authenticated private registries, or excludePackages to skip internal packages later.",
+      ]);
+
+      expect(buildPrivateRegistryGuidance({ excludePackages: ["@internal/*"] }, "both")).toEqual([
+        "Private registry guidance:",
+        "- Set NPM_TOKEN in the environment when private packages should be analyzed.",
+        "- Use excludePackages when internal packages should be skipped instead.",
+        "- Current exclude patterns: @internal/*",
+      ]);
+    });
+
+    it("applies mode selection to merged auth and exclude settings", () => {
+      expect(
+        applyPrivateRegistryModeSelection(
+          { npmToken: "tok_123", excludePackages: ["@internal/*"] },
+          "auth",
+        ),
+      ).toEqual({
+        npmToken: "tok_123",
+        excludePackages: [],
+      });
+
+      expect(
+        applyPrivateRegistryModeSelection(
+          { npmToken: "tok_123", excludePackages: ["@internal/*"] },
+          "exclude",
+        ),
+      ).toEqual({
+        excludePackages: ["@internal/*"],
+      });
+
+      expect(
+        applyPrivateRegistryModeSelection(
+          { npmToken: "tok_123", excludePackages: ["@internal/*"] },
+          "none",
+        ),
+      ).toEqual({
+        excludePackages: [],
+      });
     });
   });
 });

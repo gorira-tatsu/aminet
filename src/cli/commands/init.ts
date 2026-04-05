@@ -22,6 +22,8 @@ interface ConfigField {
   invalidMessage?: string;
 }
 
+export type PrivateRegistryMode = "auth" | "exclude" | "both" | "none";
+
 const VULN_THRESHOLDS = new Set(["low", "medium", "high", "critical"]);
 const LICENSE_THRESHOLDS = new Set(["copyleft", "weak-copyleft"]);
 
@@ -140,6 +142,110 @@ export function normalizeThresholdInput(
   return allowed.has(normalized) ? normalized : null;
 }
 
+export function parsePrivateRegistryModeInput(
+  input: string,
+  fallback: PrivateRegistryMode,
+): PrivateRegistryMode | null {
+  const trimmed = input.trim().toLowerCase();
+  if (trimmed === "") return fallback;
+  if (trimmed === "a" || trimmed === "auth") return "auth";
+  if (trimmed === "e" || trimmed === "exclude") return "exclude";
+  if (trimmed === "b" || trimmed === "both") return "both";
+  if (trimmed === "n" || trimmed === "none") return "none";
+  return null;
+}
+
+export function shouldPromptForExcludePackages(mode: PrivateRegistryMode): boolean {
+  return mode === "exclude" || mode === "both";
+}
+
+export function getPrivateRegistryModeFallback(existingConfig?: AmiConfig): PrivateRegistryMode {
+  const hasExcludePackages = Boolean(
+    existingConfig?.excludePackages && existingConfig.excludePackages.length > 0,
+  );
+  const hasConfiguredAuth =
+    typeof existingConfig?.npmToken === "string" && existingConfig.npmToken.trim().length > 0;
+
+  if (hasConfiguredAuth && hasExcludePackages) {
+    return "both";
+  }
+  if (hasConfiguredAuth) {
+    return "auth";
+  }
+  if (hasExcludePackages) {
+    return "exclude";
+  }
+
+  return "none";
+}
+
+export function resolvePrivateRegistryMode(
+  selectedMode: PrivateRegistryMode,
+  config: AmiConfig,
+): PrivateRegistryMode {
+  const hasExcludePackages = Boolean(config.excludePackages && config.excludePackages.length > 0);
+  const hasConfiguredAuth =
+    typeof config.npmToken === "string" && config.npmToken.trim().length > 0;
+  const hasAuth = selectedMode === "auth" || selectedMode === "both" || hasConfiguredAuth;
+
+  if (hasAuth && hasExcludePackages) {
+    return "both";
+  }
+  if (hasAuth) {
+    return "auth";
+  }
+  if (hasExcludePackages) {
+    return "exclude";
+  }
+
+  return "none";
+}
+
+export function buildPrivateRegistryGuidance(
+  config: AmiConfig,
+  mode: PrivateRegistryMode,
+): string[] {
+  const lines = ["Private registry guidance:"];
+
+  if (mode === "auth" || mode === "both") {
+    lines.push("- Set NPM_TOKEN in the environment when private packages should be analyzed.");
+  }
+
+  if (mode === "exclude" || mode === "both") {
+    lines.push("- Use excludePackages when internal packages should be skipped instead.");
+  }
+
+  if (mode === "none") {
+    lines.push("- No private package handling is configured yet.");
+    lines.push(
+      "- Use NPM_TOKEN for authenticated private registries, or excludePackages to skip internal packages later.",
+    );
+  }
+
+  if (config.excludePackages && config.excludePackages.length > 0) {
+    lines.push(`- Current exclude patterns: ${config.excludePackages.join(", ")}`);
+  }
+
+  return lines;
+}
+
+export function applyPrivateRegistryModeSelection(
+  config: AmiConfig,
+  mode: PrivateRegistryMode,
+): AmiConfig {
+  const next: AmiConfig = { ...config };
+
+  if (mode === "auth" || mode === "none") {
+    next.excludePackages = [];
+  }
+
+  if (mode === "exclude" || mode === "none") {
+    delete next.npmToken;
+  }
+
+  return next;
+}
+
 function formatConfig(config: AmiConfig, redactSecrets = true): string {
   // Remove fields with empty arrays or undefined values for cleaner output
   const clean: Record<string, unknown> = {};
@@ -204,7 +310,7 @@ function handleNonInteractive(configPath: string, exists: boolean, options: Init
 
   writeFileSync(configPath, `${serializeConfig(config)}\n`, "utf-8");
   console.log(formatConfig(config));
-  printPrivateRegistryGuidance(config);
+  printPrivateRegistryGuidance(config, "", resolvePrivateRegistryMode("none", config));
 }
 
 async function handleInteractive(configPath: string, exists: boolean): Promise<void> {
@@ -246,8 +352,13 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
     }
 
     const config: AmiConfig = {};
+    const privateRegistryMode = await promptPrivateRegistryMode(rl, existingConfig);
 
     for (const field of CONFIG_FIELDS) {
+      if (field.key === "excludePackages" && !shouldPromptForExcludePackages(privateRegistryMode)) {
+        continue;
+      }
+
       const promptDefault = existingConfig?.[field.key] ?? field.defaultValue;
       const defaultStr = promptDefault === undefined ? "" : formatDefaultHint(promptDefault);
       const hint = field.hint ? chalk.dim(` (${field.hint})`) : "";
@@ -314,7 +425,9 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
       }
     }
 
-    const finalConfig = existingConfig ? mergeConfigs(config, existingConfig) : config;
+    const mergedConfig = existingConfig ? mergeConfigs(config, existingConfig) : config;
+    const finalConfig = applyPrivateRegistryModeSelection(mergedConfig, privateRegistryMode);
+    const finalPrivateRegistryMode = resolvePrivateRegistryMode(privateRegistryMode, finalConfig);
 
     console.log(chalk.bold("\n  Generated config:\n"));
     console.log(formatConfig(finalConfig));
@@ -327,23 +440,46 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
 
     writeFileSync(configPath, `${serializeConfig(finalConfig)}\n`, "utf-8");
     console.log(chalk.green(`\n  Wrote ${CONFIG_FILENAME}`));
-    printPrivateRegistryGuidance(finalConfig, "  ");
+    printPrivateRegistryGuidance(finalConfig, "  ", finalPrivateRegistryMode);
   } finally {
     rl.close();
   }
 }
 
-function printPrivateRegistryGuidance(config: AmiConfig, indent = ""): void {
-  const prefix = indent ? `\n${indent}` : "\n";
-  const lines = [
-    `${prefix}Private registry guidance:`,
-    `${indent}- Set ${chalk.bold("NPM_TOKEN")} in the environment when private packages should be analyzed.`,
-    `${indent}- Use ${chalk.bold("excludePackages")} when internal packages should be skipped instead.`,
-  ];
+async function promptPrivateRegistryMode(
+  rl: ReturnType<typeof createInterface>,
+  existingConfig?: AmiConfig,
+): Promise<PrivateRegistryMode> {
+  const fallback = getPrivateRegistryModeFallback(existingConfig);
 
-  if (config.excludePackages && config.excludePackages.length > 0) {
-    lines.push(`${indent}- Current exclude patterns: ${config.excludePackages.join(", ")}`);
+  while (true) {
+    const answer = await rl.question(
+      "  Private registry handling: (a)uth / (e)xclude / (b)oth / (n)either? " +
+        chalk.dim(`[${fallback}]`) +
+        ": ",
+    );
+    const parsed = parsePrivateRegistryModeInput(answer, fallback);
+    if (parsed !== null) {
+      return parsed;
+    }
+    console.log(chalk.yellow("  Enter auth, exclude, both, or none (a/e/b/n)."));
   }
+}
 
-  console.log(chalk.dim(lines.join("\n")));
+function printPrivateRegistryGuidance(
+  config: AmiConfig,
+  indent = "",
+  mode: PrivateRegistryMode = "none",
+): void {
+  const lines = buildPrivateRegistryGuidance(config, mode).map(
+    (line) => `${indent}${formatGuidanceLine(line)}`,
+  );
+
+  console.log(chalk.dim(`\n${lines.join("\n")}`));
+}
+
+function formatGuidanceLine(line: string): string {
+  return line
+    .replaceAll("NPM_TOKEN", chalk.bold("NPM_TOKEN"))
+    .replaceAll("excludePackages", chalk.bold("excludePackages"));
 }
