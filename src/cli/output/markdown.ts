@@ -1,7 +1,13 @@
 import type { DependencyDiff } from "../../core/diff/types.js";
 import type { LicenseReference } from "../../core/license/metadata.js";
 
-const MARKER = "<!-- aminet-review -->";
+export const LEGACY_REVIEW_MARKER = "<!-- aminet-review -->";
+
+export interface ReviewCommentRenderOptions {
+  marker?: string;
+  targetPath?: string;
+  label?: string;
+}
 
 const RISK_ICONS: Record<string, string> = {
   none: ":white_circle:",
@@ -11,11 +17,53 @@ const RISK_ICONS: Record<string, string> = {
   critical: ":red_circle:",
 };
 
-export function renderMarkdownComment(diff: DependencyDiff): string {
+export function renderMarkdownComment(
+  diff: DependencyDiff,
+  options: ReviewCommentRenderOptions = {},
+): string {
+  const marker = options.marker ?? LEGACY_REVIEW_MARKER;
+  const targetPath = normalizeInlineText(options.targetPath);
+  const label = normalizeInlineText(options.label) ?? targetPath;
   const lines: string[] = [];
 
-  lines.push(MARKER);
-  lines.push("## aminet Dependency Review");
+  lines.push(marker);
+  lines.push(`## aminet Dependency Review${label ? ` — \`${label}\`` : ""}`);
+  if (targetPath) {
+    lines.push("");
+    lines.push(`Target: \`${targetPath}\``);
+  }
+  lines.push("");
+  lines.push(`**Summary**: ${buildCompactSummary(diff)}`);
+  lines.push("");
+
+  const icon = RISK_ICONS[diff.summary.riskLevel] ?? ":white_circle:";
+  lines.push(`**Risk Level**: ${icon} ${capitalize(diff.summary.riskLevel)}`);
+  lines.push("");
+
+  const keyAlerts = buildKeyAlerts(diff);
+  if (keyAlerts.length > 0) {
+    lines.push("### Key Alerts");
+    lines.push("");
+    for (const alert of keyAlerts) {
+      lines.push(`- ${alert}`);
+    }
+    lines.push("");
+  }
+
+  if (hasNoDirectDependencyChanges(diff)) {
+    if (diff.notes && diff.notes.length > 0) {
+      lines.push("### Analysis Notes");
+      lines.push("");
+      for (const note of diff.notes) {
+        lines.push(`- ${note}`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+
+  lines.push("<details>");
+  lines.push("<summary>Detailed review</summary>");
   lines.push("");
   lines.push("| Metric | Count |");
   lines.push("|--------|-------|");
@@ -32,25 +80,11 @@ export function renderMarkdownComment(diff: DependencyDiff): string {
   }
   lines.push("");
 
-  const icon = RISK_ICONS[diff.summary.riskLevel] ?? ":white_circle:";
-  lines.push(`**Risk Level**: ${icon} ${capitalize(diff.summary.riskLevel)}`);
-  lines.push("");
-
   if (diff.notes && diff.notes.length > 0) {
     lines.push("### Analysis Notes");
     lines.push("");
     for (const note of diff.notes) {
       lines.push(`- ${note}`);
-    }
-    lines.push("");
-  }
-
-  const keyAlerts = buildKeyAlerts(diff);
-  if (keyAlerts.length > 0) {
-    lines.push("### Key Alerts");
-    lines.push("");
-    for (const alert of keyAlerts) {
-      lines.push(`- ${alert}`);
     }
     lines.push("");
   }
@@ -187,7 +221,39 @@ export function renderMarkdownComment(diff: DependencyDiff): string {
     lines.push("");
   }
 
+  lines.push("</details>");
+
   return lines.join("\n");
+}
+
+function hasNoDirectDependencyChanges(diff: DependencyDiff): boolean {
+  return (
+    diff.summary.addedCount === 0 &&
+    diff.summary.removedCount === 0 &&
+    diff.summary.updatedCount === 0 &&
+    diff.summary.newVulnCount === 0 &&
+    diff.summary.resolvedVulnCount === 0 &&
+    diff.summary.newSecuritySignalCount === 0 &&
+    diff.summary.resolvedSecuritySignalCount === 0 &&
+    diff.summary.licenseChangeCount === 0
+  );
+}
+
+function buildCompactSummary(diff: DependencyDiff): string {
+  if (hasNoDirectDependencyChanges(diff)) {
+    return "No direct dependency changes detected.";
+  }
+
+  const parts = [
+    formatCount(diff.summary.addedCount, "added dependency", "added dependencies"),
+    formatCount(diff.summary.removedCount, "removed dependency", "removed dependencies"),
+    formatCount(diff.summary.updatedCount, "updated dependency", "updated dependencies"),
+    formatCount(diff.summary.newVulnCount, "new vulnerability", "new vulnerabilities"),
+    formatCount(diff.summary.newSecuritySignalCount, "new security signal", "new security signals"),
+    formatCount(diff.summary.licenseChangeCount, "license change", "license changes"),
+  ].filter((part): part is string => part !== null);
+
+  return parts.join(", ");
 }
 
 function filterVisibleSecuritySignals(
@@ -332,4 +398,18 @@ function formatTransition(previous?: string | null, next?: string | null): strin
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatCount(count: number, singular: string, plural: string): string | null {
+  if (count === 0) {
+    return null;
+  }
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function normalizeInlineText(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return value.trim().replace(/\r?\n/g, " ").replace(/`/g, "\\`");
 }

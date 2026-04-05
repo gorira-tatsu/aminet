@@ -27,7 +27,7 @@ import { fetchWithRetry } from "../../utils/http.js";
 import { logger, setLogLevel } from "../../utils/logger.js";
 import { runCommand } from "../../utils/process.js";
 import type { AnalyzeOptions } from "../options.js";
-import { renderMarkdownComment } from "../output/markdown.js";
+import { LEGACY_REVIEW_MARKER, renderMarkdownComment } from "../output/markdown.js";
 
 export interface ReviewOptions extends AnalyzeOptions {
   base?: string;
@@ -36,12 +36,21 @@ export interface ReviewOptions extends AnalyzeOptions {
   repo?: string;
   updateComment?: boolean;
   lockfilePath?: string;
+  commentId?: string;
+  commentPrefix?: string;
 }
 
 interface ReviewManifest {
   ecosystem: "npm" | "pypi";
   dependencies: Map<string, string>;
   notes: string[];
+}
+
+export interface ReviewCommentContext {
+  commentId: string;
+  marker: string;
+  targetPath: string;
+  label: string;
 }
 
 export async function reviewCommand(target: string, options: ReviewOptions): Promise<void> {
@@ -68,6 +77,18 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
   const headRef = options.head; // undefined means working tree
 
   const ecosystem = inferReviewEcosystem(target);
+  const gitRoot = await findGitRoot();
+  let commentContext: ReviewCommentContext;
+  try {
+    commentContext = buildReviewCommentContext(target, {
+      gitRoot,
+      commentId: options.commentId,
+      commentPrefix: options.commentPrefix,
+    });
+  } catch (error) {
+    console.error(chalk.red(error instanceof Error ? error.message : String(error)));
+    process.exit(1);
+  }
   const useSpinner = !options.ci;
   const spinner = useSpinner ? ora("Loading dependency manifests...").start() : null;
 
@@ -178,7 +199,11 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
 
   diff.notes = [...new Set([...baseManifest.notes, ...headManifest.notes])];
 
-  const markdown = renderMarkdownComment(diff);
+  const markdown = renderMarkdownComment(diff, {
+    marker: commentContext.marker,
+    targetPath: commentContext.targetPath,
+    label: commentContext.label,
+  });
 
   // Post to GitHub PR if credentials available
   const token = process.env.GITHUB_TOKEN;
@@ -188,7 +213,13 @@ export async function reviewCommand(target: string, options: ReviewOptions): Pro
   if (token && repo && prNumber && options.updateComment !== false) {
     const prSpinner = useSpinner ? ora("Posting PR comment...").start() : null;
     try {
-      await postOrUpdateComment(repo, parseInt(prNumber, 10), markdown, token);
+      await postOrUpdateComment(
+        repo,
+        parseInt(prNumber, 10),
+        markdown,
+        token,
+        commentContext.marker,
+      );
       if (prSpinner) prSpinner.succeed("PR comment posted");
     } catch (error) {
       if (prSpinner) prSpinner.fail("Failed to post PR comment");
@@ -337,6 +368,36 @@ export function computeWorkspacePath(
   return rel && rel !== "." ? rel : undefined;
 }
 
+export function buildReviewCommentContext(
+  target: string,
+  options: {
+    gitRoot?: string | null;
+    commentId?: string;
+    commentPrefix?: string;
+  } = {},
+): ReviewCommentContext {
+  const gitRoot = options.gitRoot ?? null;
+  const targetPath = normalizeReviewPath(toGitRelativePath(target, gitRoot));
+  const commentId = normalizeReviewSingleLineInput(options.commentId, "comment-id") ?? targetPath;
+  const label =
+    normalizeReviewSingleLineInput(options.commentPrefix, "comment-prefix") ?? targetPath;
+
+  return {
+    commentId,
+    marker: buildReviewCommentMarker(commentId),
+    targetPath,
+    label,
+  };
+}
+
+export function buildReviewCommentMarker(commentId: string): string {
+  const normalizedCommentId = normalizeReviewSingleLineInput(commentId, "comment-id");
+  if (!normalizedCommentId) {
+    throw new Error("comment-id must not be empty");
+  }
+  return `<!-- aminet-review:id=${encodeURIComponent(normalizedCommentId)} -->`;
+}
+
 function toGitRelativePath(filePath: string, gitRoot: string | null): string {
   if (!gitRoot) {
     return filePath;
@@ -430,14 +491,14 @@ async function isReadableFile(path: string): Promise<boolean> {
   }
 }
 
-async function postOrUpdateComment(
+export async function postOrUpdateComment(
   repo: string,
   prNumber: number,
   body: string,
   token: string,
+  marker: string,
 ): Promise<void> {
   const apiBase = "https://api.github.com";
-  const marker = "<!-- aminet-review -->";
   const headers = {
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github.v3+json",
@@ -456,7 +517,7 @@ async function postOrUpdateComment(
     id: number;
     body: string;
   }>;
-  const existing = comments.find((c) => c.body.includes(marker));
+  const existing = findReviewCommentToUpdate(comments, marker);
 
   if (existing) {
     // Update existing comment
@@ -483,4 +544,44 @@ async function postOrUpdateComment(
     }
     logger.debug("Created new PR comment");
   }
+}
+
+function findReviewCommentToUpdate(
+  comments: Array<{
+    id: number;
+    body: string;
+  }>,
+  marker: string,
+) {
+  const exactMatch = comments.find((comment) => comment.body.includes(marker));
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const legacyMatches = comments.filter((comment) => comment.body.includes(LEGACY_REVIEW_MARKER));
+  return legacyMatches.length === 1 ? legacyMatches[0] : undefined;
+}
+
+function normalizeReviewSingleLineInput(
+  value: string | undefined,
+  optionName: "comment-id" | "comment-prefix",
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  if (/[\r\n]/.test(trimmed)) {
+    throw new Error(`${optionName} must be a single line`);
+  }
+
+  return trimmed;
+}
+
+function normalizeReviewPath(filePath: string): string {
+  return filePath.replace(/\\/g, "/");
 }

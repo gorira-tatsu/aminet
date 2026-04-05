@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LEGACY_REVIEW_MARKER } from "../../../src/cli/output/markdown.js";
 
 const { runCommand } = vi.hoisted(() => ({
   runCommand: vi.fn(),
@@ -19,6 +20,10 @@ const { getDatabase } = vi.hoisted(() => ({
   getDatabase: vi.fn(),
 }));
 
+const { fetchWithRetry } = vi.hoisted(() => ({
+  fetchWithRetry: vi.fn(),
+}));
+
 vi.mock("../../../src/core/config/loader.js", () => ({
   loadConfig,
 }));
@@ -27,11 +32,18 @@ vi.mock("../../../src/core/store/database.js", () => ({
   getDatabase,
 }));
 
+vi.mock("../../../src/utils/http.js", () => ({
+  fetchWithRetry,
+}));
+
 import {
   buildPythonReviewNotes,
+  buildReviewCommentContext,
+  buildReviewCommentMarker,
   computeWorkspacePath,
   loadAdjacentLockfile,
   parsePythonReviewManifest,
+  postOrUpdateComment,
   reviewCommand,
 } from "../../../src/cli/commands/review.js";
 
@@ -42,6 +54,7 @@ describe("review lockfile helpers", () => {
     tempRoot = await mkdtemp(join(tmpdir(), "aminet-review-"));
     runCommand.mockReset();
     runCommand.mockResolvedValue({ exitCode: 0, stdout: `${tempRoot}\n`, stderr: "" });
+    fetchWithRetry.mockReset();
   });
 
   afterEach(async () => {
@@ -157,6 +170,101 @@ describe("review lockfile helpers", () => {
 
     expect(result?.format).toBe("uv.lock");
     expect(result?.packages.get("fastapi")).toBe("0.116.1");
+  });
+});
+
+describe("review comment helpers", () => {
+  it("builds per-manifest comment context from the git-relative path", () => {
+    const context = buildReviewCommentContext("/repo/apps/backend/package.json", {
+      gitRoot: "/repo",
+    });
+
+    expect(context.commentId).toBe("apps/backend/package.json");
+    expect(context.targetPath).toBe("apps/backend/package.json");
+    expect(context.label).toBe("apps/backend/package.json");
+    expect(context.marker).toBe("<!-- aminet-review:id=apps%2Fbackend%2Fpackage.json -->");
+  });
+
+  it("uses comment-prefix only for display and comment-id only for updates", () => {
+    const context = buildReviewCommentContext("apps/backend/package.json", {
+      commentId: "backend-review",
+      commentPrefix: "Backend",
+    });
+
+    expect(context.commentId).toBe("backend-review");
+    expect(context.label).toBe("Backend");
+    expect(context.marker).toBe(buildReviewCommentMarker("backend-review"));
+  });
+
+  it("rejects multiline comment identifiers", () => {
+    expect(() =>
+      buildReviewCommentContext("apps/backend/package.json", {
+        commentId: "backend\nreview",
+      }),
+    ).toThrow("comment-id must be a single line");
+  });
+});
+
+describe("postOrUpdateComment", () => {
+  beforeEach(() => {
+    fetchWithRetry.mockReset();
+  });
+
+  it("updates a matching marker comment", async () => {
+    const marker = buildReviewCommentMarker("apps/backend/package.json");
+    fetchWithRetry.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [{ id: 42, body: `${marker}\nold body` }],
+    });
+    fetchWithRetry.mockResolvedValueOnce({ ok: true, status: 200 });
+
+    await postOrUpdateComment("gorira-tatsu/aminet", 46, `${marker}\nnew body`, "token", marker);
+
+    expect(fetchWithRetry).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/repos/gorira-tatsu/aminet/issues/comments/42",
+      expect.objectContaining({ method: "PATCH" }),
+    );
+  });
+
+  it("migrates a single legacy comment to the new marker", async () => {
+    const marker = buildReviewCommentMarker("apps/frontend/package.json");
+    fetchWithRetry.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [{ id: 7, body: `${LEGACY_REVIEW_MARKER}\nold body` }],
+    });
+    fetchWithRetry.mockResolvedValueOnce({ ok: true, status: 200 });
+
+    await postOrUpdateComment("gorira-tatsu/aminet", 46, `${marker}\nnew body`, "token", marker);
+
+    expect(fetchWithRetry).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/repos/gorira-tatsu/aminet/issues/comments/7",
+      expect.objectContaining({ method: "PATCH" }),
+    );
+  });
+
+  it("creates a new comment when legacy comments are ambiguous", async () => {
+    const marker = buildReviewCommentMarker("apps/frontend/package.json");
+    fetchWithRetry.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => [
+        { id: 1, body: `${LEGACY_REVIEW_MARKER}\nfirst` },
+        { id: 2, body: `${LEGACY_REVIEW_MARKER}\nsecond` },
+      ],
+    });
+    fetchWithRetry.mockResolvedValueOnce({ ok: true, status: 201 });
+
+    await postOrUpdateComment("gorira-tatsu/aminet", 46, `${marker}\nnew body`, "token", marker);
+
+    expect(fetchWithRetry).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/repos/gorira-tatsu/aminet/issues/46/comments",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });
 

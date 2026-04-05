@@ -46,4 +46,7 @@ export interface ReviewOptions extends AnalyzeOptions {
   prNumber?: string;
   repo?: string;
   updateComment?: boolean;
+  lockfilePath?: string;
+  commentId?: string;
+  commentPrefix?: string;
 }
