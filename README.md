@@ -327,6 +327,7 @@ aminet can analyze Python dependencies from `requirements.txt` and `pyproject.to
 - **Pinned versions (`==`) are scanned accurately.** Range specifiers resolve to the latest compatible version from PyPI, which may not match your actual environment. These are marked as best-effort in the analysis.
 - Dependencies with environment markers (e.g., `; python_version < '3.8'`) are skipped with a warning.
 - Poetry dependencies without a version-bearing specifier, such as local `path` or `git` sources, are currently out of scope for review parsing.
+- `requirements.txt` directives such as `-r`, `-e`, and `--index-url` are ignored and surfaced as analysis notes instead of being treated as package dependencies.
 - Python lockfiles are currently `analyze` inputs, not standalone `review` inputs.
 - `review` supports `requirements.txt` and `pyproject.toml`. When a `pyproject.toml` review has an adjacent or explicit Python lockfile, aminet uses it to pin direct dependency versions where possible.
 
