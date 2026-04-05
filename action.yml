@@ -5,7 +5,7 @@ branding:
   color: red
 inputs:
   path:
-    description: "Path to the dependency manifest to review (package.json, requirements.txt, or pyproject.toml)"
+    description: "Path to the manifest to review. Supports package.json, requirements.txt, and pyproject.toml."
     default: "package.json"
   depth:
     description: "Maximum dependency depth"
@@ -20,7 +20,7 @@ inputs:
     description: "Enable security deep analysis"
     default: "true"
   lockfile-path:
-    description: "Explicit path to lockfile (for monorepos or Python lockfiles used to pin pyproject review)"
+    description: "Explicit lockfile path used to pin review resolution (monorepos, or poetry.lock / pdm.lock / uv.lock alongside pyproject.toml)"
     required: false
   dev:
     description: "Include devDependencies in review (default: true)"

@@ -70,6 +70,16 @@ Common inputs:
 - `exclude-packages`: comma-separated packages to skip (supports wildcards like `@scope/*`)
 - `npm-token`: npm auth token for private registry access
 
+Capability guide:
+
+| Surface | Supported inputs |
+|---------|------------------|
+| `analyze` CLI | `package.json`, `pnpm-lock.yaml`, `package-lock.json`, `bun.lock`, `requirements.txt`, `pyproject.toml`, `poetry.lock`, `pdm.lock`, `uv.lock` |
+| `review` CLI | `package.json`, `requirements.txt`, `pyproject.toml` |
+| GitHub Action | wraps `review`; use `path` with `package.json`, `requirements.txt`, or `pyproject.toml` |
+
+For Python projects, the Action does not accept standalone Python lockfiles through `path`. Use `lockfile-path` to pin a `pyproject.toml` review with `poetry.lock`, `pdm.lock`, or `uv.lock`.
+
 For monorepo usage where `package.json` is in a sub-package:
 
 ```yaml
@@ -88,6 +98,15 @@ For Python review from a manifest:
         with:
           path: pyproject.toml
           lockfile-path: uv.lock
+          security: "true"
+```
+
+For Python review from `requirements.txt`:
+
+```yaml
+      - uses: gorira-tatsu/aminet@v0.2.1
+        with:
+          path: requirements.txt
           security: "true"
 ```
 
@@ -167,6 +186,7 @@ Analyze Python dependencies:
 ```bash
 npx aminet analyze requirements.txt
 npx aminet analyze pyproject.toml
+npx aminet analyze uv.lock
 npx aminet analyze requests --ecosystem pypi
 ```
 
@@ -178,6 +198,12 @@ npx aminet review package.json --base HEAD~1 --no-dev  # exclude devDependencies
 npx aminet review requirements.txt --base HEAD~1 --security
 npx aminet review pyproject.toml --base HEAD~1 --lockfile-path uv.lock
 ```
+
+Capability summary:
+
+- `analyze` accepts standalone Python lockfiles (`poetry.lock`, `pdm.lock`, `uv.lock`) and reads the adjacent `pyproject.toml`.
+- `review` accepts `requirements.txt` and `pyproject.toml`, not standalone Python lockfiles.
+- the GitHub Action wraps `review`, so Python lockfiles are passed through `lockfile-path` rather than `path`.
 
 Review with private packages (skip or authenticate):
 
