@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { buildPythonManifestNotes } from "../../../src/core/lockfile/python-notes.js";
+import {
+  buildPythonDependencyNotes,
+  buildPythonManifestNotes,
+} from "../../../src/core/lockfile/python-notes.js";
+
+describe("buildPythonDependencyNotes", () => {
+  it("deduplicates repeated note inputs and preserves shared wording", () => {
+    expect(
+      buildPythonDependencyNotes({
+        bestEffortDependencies: ["urllib3", "urllib3"],
+        markerSkipped: ["typing-extensions", "typing-extensions"],
+        directiveSkipped: ["-r base.txt", "-r base.txt"],
+        includedOptionalDevCount: 2,
+        reviewMode: true,
+      }),
+    ).toEqual([
+      "Best-effort Python resolution: urllib3. Unpinned direct specs use the latest compatible PyPI release as a stand-in and may not match the exact environment.",
+      "Skipped marker-gated Python dependencies: typing-extensions. Environment-specific requirements are not evaluated.",
+      "Ignored requirements.txt directives: -r base.txt; only direct package specifiers are analyzed.",
+      "Included 2 Python optional/dev dependencies in review mode.",
+    ]);
+  });
+});
 
 describe("buildPythonManifestNotes", () => {
   it("formats aligned analyze notes for best-effort, marker skips, and directives", () => {
