@@ -1,47 +1,51 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-describe("database fallback", () => {
+describe("database degraded mode", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.restoreAllMocks();
-    process.exitCode = 0;
   });
 
-  afterEach(async () => {
-    try {
-      const dbModule = await import("../../../src/core/store/database.js");
-      dbModule.closeDatabase();
-    } catch {
-      // ignore
-    }
+  afterEach(() => {
     vi.doUnmock("../../../src/core/store/adapter.js");
-    process.exitCode = 0;
+    vi.doUnmock("../../../src/core/store/migrations.js");
+    vi.doUnmock("../../../src/utils/logger.js");
   });
 
-  it("falls back to a no-op database when native sqlite fails to initialize", async () => {
-    vi.doMock("../../../src/core/store/adapter.js", async () => {
-      const actual = await vi.importActual<typeof import("../../../src/core/store/adapter.js")>(
-        "../../../src/core/store/adapter.js",
-      );
-      return {
-        ...actual,
-        createDatabase: () => {
-          throw new Error("native bindings unavailable");
-        },
-      };
-    });
+  it("warns once and continues in ephemeral mode when persistent cache init fails", async () => {
+    const warn = vi.fn();
 
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const dbModule = await import("../../../src/core/store/database.js");
-    const packumentStore = await import("../../../src/core/store/packument-store.js");
+    vi.doMock("../../../src/core/store/adapter.js", () => ({
+      createDatabase: vi.fn(() => {
+        throw new Error("native bindings unavailable");
+      }),
+    }));
+    vi.doMock("../../../src/core/store/migrations.js", () => ({
+      runMigrations: vi.fn(),
+    }));
+    vi.doMock("../../../src/utils/logger.js", () => ({
+      logger: {
+        debug: vi.fn(),
+        warn,
+      },
+    }));
 
-    dbModule.getDatabase();
+    const {
+      closeDatabase,
+      getDatabase,
+      getPersistentCacheFailureReason,
+      isPersistentCacheAvailable,
+    } = await import("../../../src/core/store/database.js");
 
-    expect(dbModule.isPersistentCacheAvailable()).toBe(false);
-    expect(dbModule.getPersistentCacheFailureReason()).toContain("native bindings unavailable");
-    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const first = getDatabase(":memory:");
+    const second = getDatabase(":memory:");
 
-    expect(() => packumentStore.cachePackument("express", { name: "express" })).not.toThrow();
-    expect(packumentStore.getCachedPackument("express")).toBeNull();
+    expect(first).toBe(second);
+    expect(isPersistentCacheAvailable()).toBe(false);
+    expect(getPersistentCacheFailureReason()).toBe("native bindings unavailable");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("ephemeral mode"));
+
+    closeDatabase();
   });
 });

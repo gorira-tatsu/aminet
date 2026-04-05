@@ -87,7 +87,7 @@ export function getDatabase(dbPath?: string): DatabaseLike {
 
     if (!warnedPersistentCacheFailure) {
       logger.warn(
-        `Persistent cache unavailable for this run: ${persistentCacheFailureReason}. Analyze and review will continue without the on-disk cache.`,
+        `Persistent cache is unavailable in this environment: ${persistentCacheFailureReason}. aminet will continue in ephemeral mode for this run, so analyze and review still work but nothing is stored on disk.`,
       );
       warnedPersistentCacheFailure = true;
     }
