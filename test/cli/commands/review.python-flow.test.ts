@@ -151,7 +151,7 @@ describe("reviewCommand Python regression coverage", () => {
       expect(output).toContain("### Updated Dependencies");
       expect(output).toContain("| httpx |");
       expect(output).toContain("| fastapi |");
-      expect(output).toContain("Best-effort resolution was used for: fastapi.");
+      expect(output).toContain("Best-effort Python resolution: fastapi.");
       expect(output).toContain("Skipped marker-gated Python dependencies: typing-extensions.");
       expect(buildReportForPackageSpec).toHaveBeenCalledWith(
         "fastapi",

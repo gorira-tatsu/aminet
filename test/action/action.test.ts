@@ -16,7 +16,9 @@ describe("composite action regression coverage", () => {
 
     expect(action.inputs.path.description).toContain("requirements.txt");
     expect(action.inputs.path.description).toContain("pyproject.toml");
-    expect(action.inputs["lockfile-path"].description).toContain("Python lockfiles");
+    expect(action.inputs["lockfile-path"].description).toContain("lockfile");
+    expect(action.inputs["lockfile-path"].description).toContain("pyproject.toml");
+    expect(action.inputs["lockfile-path"].description).toContain("uv.lock");
 
     const reviewStep = action.runs.steps.find((step) => step.name === "Run aminet review");
     const forwardedPath = '"$' + '{{ inputs.path }}"';
