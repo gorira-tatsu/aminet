@@ -1,9 +1,12 @@
+import type { TomlTable, TomlValue } from "smol-toml";
+import { parse as parseToml } from "smol-toml";
 import { parsePep508 } from "../registry/pypi-client.js";
 
 export interface SkippedPythonDependency {
   name?: string;
   spec: string;
   reason: "directive" | "marker";
+  scope?: "prod" | "dev";
 }
 
 export interface ParsedPythonManifest {
@@ -34,15 +37,15 @@ export function parseRequirementsManifest(content: string): ParsedPythonManifest
     if (line === "" || line.startsWith("#")) continue;
 
     if (line.startsWith("-r ") || line.startsWith("-r\t")) {
-      skipped.push({ spec: line, reason: "directive" });
+      skipped.push({ spec: line, reason: "directive", scope: "prod" });
       continue;
     }
     if (line.startsWith("-e ") || line.startsWith("-e\t")) {
-      skipped.push({ spec: line, reason: "directive" });
+      skipped.push({ spec: line, reason: "directive", scope: "prod" });
       continue;
     }
     if (line.startsWith("--")) {
-      skipped.push({ spec: line, reason: "directive" });
+      skipped.push({ spec: line, reason: "directive", scope: "prod" });
       continue;
     }
 
@@ -50,7 +53,7 @@ export function parseRequirementsManifest(content: string): ParsedPythonManifest
     const cleaned = commentIdx !== -1 ? line.slice(0, commentIdx).trim() : line;
     if (cleaned === "") continue;
 
-    addParsedDep(cleaned, packages, skipped);
+    addParsedDep(cleaned, packages, skipped, "prod");
   }
 
   return {
@@ -91,35 +94,53 @@ export function parsePyprojectManifest(content: string): ParsedPythonManifest {
   const dependencies = new Map<string, string>();
   const devDependencies = new Map<string, string>();
   const skipped: SkippedPythonDependency[] = [];
+  const parsedToml = safeParseToml(content);
 
   const name =
-    extractStringField(content, "project", "name") ??
-    extractStringField(content, "tool.poetry", "name");
+    readStringPath(parsedToml, ["project", "name"]) ??
+    readStringPath(parsedToml, ["tool", "poetry", "name"]);
   const version =
-    extractStringField(content, "project", "version") ??
-    extractStringField(content, "tool.poetry", "version");
+    readStringPath(parsedToml, ["project", "version"]) ??
+    readStringPath(parsedToml, ["tool", "poetry", "version"]);
 
-  for (const dep of extractTomlArray(content, "project", "dependencies")) {
-    addParsedDep(dep, dependencies, skipped);
+  for (const dep of readStringArrayPath(parsedToml, ["project", "dependencies"])) {
+    addParsedDep(dep, dependencies, skipped, "prod");
   }
 
   for (const group of DEV_LIKE_GROUPS) {
-    for (const dep of extractTomlArray(content, "project.optional-dependencies", group)) {
-      addParsedDep(dep, devDependencies, skipped);
+    for (const dep of readStringArrayPath(parsedToml, [
+      "project",
+      "optional-dependencies",
+      group,
+    ])) {
+      addParsedDep(dep, devDependencies, skipped, "dev");
     }
-    for (const dep of extractTomlArray(content, "dependency-groups", group)) {
-      addParsedDep(dep, devDependencies, skipped);
+    for (const dep of readDependencyGroup(
+      group,
+      readTablePath(parsedToml, ["dependency-groups"]),
+    )) {
+      addParsedDep(dep, devDependencies, skipped, "dev");
     }
   }
 
-  parsePoetryDependencySection(content, "tool.poetry.dependencies", dependencies, skipped);
-  parsePoetryDependencySection(content, "tool.poetry.dev-dependencies", devDependencies, skipped);
+  parsePoetryDependencySection(
+    readTablePath(parsedToml, ["tool", "poetry", "dependencies"]),
+    dependencies,
+    skipped,
+    "prod",
+  );
+  parsePoetryDependencySection(
+    readTablePath(parsedToml, ["tool", "poetry", "dev-dependencies"]),
+    devDependencies,
+    skipped,
+    "dev",
+  );
   for (const group of DEV_LIKE_GROUPS) {
     parsePoetryDependencySection(
-      content,
-      `tool.poetry.group.${group}.dependencies`,
+      readTablePath(parsedToml, ["tool", "poetry", "group", group, "dependencies"]),
       devDependencies,
       skipped,
+      "dev",
     );
   }
 
@@ -142,13 +163,14 @@ function addParsedDep(
   dep: string,
   map: Map<string, string>,
   skipped: SkippedPythonDependency[],
+  scope: "prod" | "dev",
 ): void {
   const parsed = parsePep508(dep);
   if (!parsed) return;
 
   const { name, versionSpec, hasMarker } = parsed;
   if (hasMarker) {
-    skipped.push({ name, spec: dep, reason: "marker" });
+    skipped.push({ name, spec: dep, reason: "marker", scope });
     return;
   }
 
@@ -156,108 +178,175 @@ function addParsedDep(
 }
 
 function parsePoetryDependencySection(
-  content: string,
-  section: string,
+  section: TomlTable | undefined,
   map: Map<string, string>,
   skipped: SkippedPythonDependency[],
+  scope: "prod" | "dev",
 ): void {
-  const sectionContent = extractSectionContent(content, section);
-  if (!sectionContent) return;
+  if (!section) return;
 
-  for (const rawLine of sectionContent.split("\n")) {
-    const line = rawLine.trim();
-    if (line === "" || line.startsWith("#")) continue;
-
-    const simpleMatch = line.match(/^([A-Za-z0-9._-]+)\s*=\s*["']([^"']+)["']/);
-    if (simpleMatch) {
-      const name = simpleMatch[1];
-      if (name.toLowerCase() === "python") continue;
-      map.set(name, normalizePythonVersionSpec(simpleMatch[2]));
-      continue;
-    }
-
-    const inlineTableMatch = line.match(/^([A-Za-z0-9._-]+)\s*=\s*\{(.+)\}$/);
-    if (!inlineTableMatch) continue;
-
-    const name = inlineTableMatch[1];
+  for (const [name, value] of Object.entries(section)) {
     if (name.toLowerCase() === "python") continue;
 
-    const tableBody = inlineTableMatch[2];
-    const markerMatch = tableBody.match(/markers\s*=\s*["']([^"']+)["']/);
-    if (markerMatch) {
-      skipped.push({ name, spec: line, reason: "marker" });
+    const parsed = parsePoetryDependencyValue(name, value, skipped, scope);
+    if (parsed !== null) {
+      map.set(name, normalizePythonVersionSpec(parsed));
+    }
+  }
+}
+
+function parsePoetryDependencyValue(
+  name: string,
+  value: TomlValue,
+  skipped: SkippedPythonDependency[],
+  scope: "prod" | "dev",
+): string | null {
+  if (typeof value === "string") return value;
+
+  if (isTomlTable(value)) {
+    if (hasPoetryMarker(value)) {
+      skipped.push({
+        name,
+        spec: renderPoetryDependencySpec(name, value),
+        reason: "marker",
+        scope,
+      });
+      return null;
+    }
+
+    const version = readStringPath(value, ["version"]);
+    return version ?? null;
+  }
+
+  if (Array.isArray(value)) {
+    const markerEntries = value.filter((entry) => isTomlTable(entry) && hasPoetryMarker(entry));
+    const nonMarkerEntries = value.filter(
+      (entry) => !isTomlTable(entry) || !hasPoetryMarker(entry),
+    );
+
+    if (markerEntries.length > 0) {
+      skipped.push({
+        name,
+        spec: renderPoetryDependencySpec(name, markerEntries),
+        reason: "marker",
+        scope,
+      });
+    }
+
+    if (nonMarkerEntries.length === 0) {
+      return null;
+    }
+
+    if (nonMarkerEntries.some((entry) => typeof entry === "string" || hasPoetryVersion(entry))) {
+      return "";
+    }
+  }
+
+  return null;
+}
+
+function safeParseToml(content: string): TomlTable {
+  try {
+    return parseToml(content);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse pyproject.toml: ${message}`);
+  }
+}
+
+function readDependencyGroup(
+  group: string,
+  dependencyGroups: TomlTable | undefined,
+  seen = new Set<string>(),
+): string[] {
+  if (!dependencyGroups || seen.has(group)) return [];
+
+  seen.add(group);
+
+  const value = dependencyGroups[group];
+  if (!Array.isArray(value)) return [];
+
+  const resolved: string[] = [];
+  for (const entry of value) {
+    if (typeof entry === "string") {
+      resolved.push(entry);
       continue;
     }
 
-    const versionMatch = tableBody.match(/version\s*=\s*["']([^"']+)["']/);
-    if (versionMatch) {
-      map.set(name, normalizePythonVersionSpec(versionMatch[1]));
+    if (!isTomlTable(entry)) continue;
+
+    const includedGroup = readStringPath(entry, ["include-group"]);
+    if (includedGroup) {
+      resolved.push(...readDependencyGroup(includedGroup, dependencyGroups, seen));
     }
   }
+
+  return resolved;
 }
 
-function extractSectionContent(content: string, section: string): string | null {
-  const sectionPattern = new RegExp(`^\\[${escapeRegex(section)}\\]\\s*$`, "m");
-  const sectionMatch = sectionPattern.exec(content);
-  if (!sectionMatch) return null;
-
-  const afterSection = content.slice(sectionMatch.index + sectionMatch[0].length);
-  const nextSectionMatch = afterSection.match(/^\[/m);
-  return nextSectionMatch ? afterSection.slice(0, nextSectionMatch.index) : afterSection;
-}
-
-/**
- * Extract a simple string field from a TOML section.
- */
-function extractStringField(content: string, section: string, field: string): string | null {
-  const sectionContent = extractSectionContent(content, section);
-  if (!sectionContent) return null;
-
-  const fieldPattern = new RegExp(`^${escapeRegex(field)}\\s*=\\s*["']([^"']*)["']`, "m");
-  const fieldMatch = fieldPattern.exec(sectionContent);
-  return fieldMatch ? fieldMatch[1] : null;
-}
-
-/**
- * Extract an array value from a TOML section.
- */
-function extractTomlArray(content: string, section: string, field: string): string[] {
-  const sectionContent = extractSectionContent(content, section);
-  if (!sectionContent) return [];
-
-  const fieldStart = new RegExp(`^${escapeRegex(field)}\\s*=\\s*\\[`, "m");
-  const fieldMatch = fieldStart.exec(sectionContent);
-  if (!fieldMatch) return [];
-
-  const bracketStart = fieldMatch.index + fieldMatch[0].length;
-  const remaining = sectionContent.slice(bracketStart);
-
-  let closingBracket = -1;
-  let inString = false;
-  let stringChar = "";
-  for (let i = 0; i < remaining.length; i++) {
-    const ch = remaining[i];
-    if (inString) {
-      if (ch === stringChar) inString = false;
-    } else if (ch === '"' || ch === "'") {
-      inString = true;
-      stringChar = ch;
-    } else if (ch === "]") {
-      closingBracket = i;
-      break;
-    }
-  }
-  if (closingBracket === -1) return [];
-
-  const arrayContent = remaining.slice(0, closingBracket);
-  const items: string[] = [];
-  const stringPattern = /["']([^"']*)["']/g;
-  for (const match of arrayContent.matchAll(stringPattern)) {
-    const value = match[1].trim();
-    if (value !== "") items.push(value);
+function readValuePath(root: TomlTable | undefined, path: string[]): TomlValue | undefined {
+  let current: TomlValue | undefined = root;
+  for (const segment of path) {
+    if (!isTomlTable(current)) return undefined;
+    current = current[segment];
   }
 
-  return items;
+  return current;
+}
+
+function readStringPath(root: TomlTable | undefined, path: string[]): string | undefined {
+  const value = readValuePath(root, path);
+  return typeof value === "string" ? value : undefined;
+}
+
+function readStringArrayPath(root: TomlTable | undefined, path: string[]): string[] {
+  const value = readValuePath(root, path);
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+
+function readTablePath(root: TomlTable | undefined, path: string[]): TomlTable | undefined {
+  const value = readValuePath(root, path);
+  return isTomlTable(value) ? value : undefined;
+}
+
+function hasPoetryMarker(value: TomlTable): boolean {
+  return typeof value.markers === "string";
+}
+
+function hasPoetryVersion(value: TomlValue): boolean {
+  return isTomlTable(value) && typeof value.version === "string";
+}
+
+function renderPoetryDependencySpec(name: string, value: TomlValue): string {
+  return `${name} = ${renderTomlValue(value)}`;
+}
+
+function renderTomlValue(value: TomlValue): string {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => renderTomlValue(entry)).join(", ")}]`;
+  }
+  if (isTomlTable(value)) {
+    return `{ ${Object.entries(value)
+      .map(([key, entry]) => `${key} = ${renderTomlValue(entry)}`)
+      .join(", ")} }`;
+  }
+
+  return String(value);
+}
+
+function isTomlTable(value: TomlValue | undefined): value is TomlTable {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function collectBestEffortDependencies(packages: Map<string, string>): string[] {
@@ -277,8 +366,4 @@ function normalizePythonVersionSpec(versionSpec: string): string {
   const trimmed = versionSpec.trim();
   const pinnedMatch = trimmed.match(/^==\s*(.+)$/);
   return pinnedMatch ? pinnedMatch[1].trim() : trimmed;
-}
-
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
