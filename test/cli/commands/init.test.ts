@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildDefaultConfig,
   buildPrivateRegistryGuidance,
+  getPrivateRegistryModeFallback,
   mergeConfigs,
   normalizeThresholdInput,
   parseBooleanInput,
@@ -120,6 +121,13 @@ describe("init command helpers", () => {
     it("resolves the effective private registry mode from the final config", () => {
       expect(resolvePrivateRegistryMode("auth", {})).toBe("auth");
       expect(resolvePrivateRegistryMode("auth", { excludePackages: ["@internal/*"] })).toBe("both");
+      expect(resolvePrivateRegistryMode("none", { npmToken: "tok_123" })).toBe("auth");
+      expect(
+        resolvePrivateRegistryMode("none", {
+          npmToken: "tok_123",
+          excludePackages: ["@internal/*"],
+        }),
+      ).toBe("both");
       expect(resolvePrivateRegistryMode("exclude", {})).toBe("none");
       expect(resolvePrivateRegistryMode("exclude", { excludePackages: ["@internal/*"] })).toBe(
         "exclude",
@@ -128,6 +136,18 @@ describe("init command helpers", () => {
       expect(resolvePrivateRegistryMode("none", { excludePackages: ["@internal/*"] })).toBe(
         "exclude",
       );
+    });
+
+    it("derives the prompt fallback from existing auth and exclude config", () => {
+      expect(getPrivateRegistryModeFallback()).toBe("none");
+      expect(getPrivateRegistryModeFallback({ excludePackages: ["@internal/*"] })).toBe("exclude");
+      expect(getPrivateRegistryModeFallback({ npmToken: "tok_123" })).toBe("auth");
+      expect(
+        getPrivateRegistryModeFallback({
+          npmToken: "tok_123",
+          excludePackages: ["@internal/*"],
+        }),
+      ).toBe("both");
     });
 
     it("builds targeted guidance without embedding secrets", () => {

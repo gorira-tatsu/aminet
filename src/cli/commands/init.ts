@@ -159,26 +159,46 @@ export function shouldPromptForExcludePackages(mode: PrivateRegistryMode): boole
   return mode === "exclude" || mode === "both";
 }
 
+export function getPrivateRegistryModeFallback(existingConfig?: AmiConfig): PrivateRegistryMode {
+  const hasExcludePackages = Boolean(
+    existingConfig?.excludePackages && existingConfig.excludePackages.length > 0,
+  );
+  const hasConfiguredAuth =
+    typeof existingConfig?.npmToken === "string" && existingConfig.npmToken.trim().length > 0;
+
+  if (hasConfiguredAuth && hasExcludePackages) {
+    return "both";
+  }
+  if (hasConfiguredAuth) {
+    return "auth";
+  }
+  if (hasExcludePackages) {
+    return "exclude";
+  }
+
+  return "none";
+}
+
 export function resolvePrivateRegistryMode(
   selectedMode: PrivateRegistryMode,
   config: AmiConfig,
 ): PrivateRegistryMode {
   const hasExcludePackages = Boolean(config.excludePackages && config.excludePackages.length > 0);
+  const hasConfiguredAuth =
+    typeof config.npmToken === "string" && config.npmToken.trim().length > 0;
+  const hasAuth = selectedMode === "auth" || selectedMode === "both" || hasConfiguredAuth;
 
-  if (selectedMode === "both") {
-    return hasExcludePackages ? "both" : "auth";
-  }
-  if (selectedMode === "exclude") {
-    return hasExcludePackages ? "exclude" : "none";
-  }
-  if (selectedMode === "auth" && hasExcludePackages) {
+  if (hasAuth && hasExcludePackages) {
     return "both";
   }
-  if (selectedMode === "none" && hasExcludePackages) {
+  if (hasAuth) {
+    return "auth";
+  }
+  if (hasExcludePackages) {
     return "exclude";
   }
 
-  return selectedMode;
+  return "none";
 }
 
 export function buildPrivateRegistryGuidance(
@@ -188,21 +208,17 @@ export function buildPrivateRegistryGuidance(
   const lines = ["Private registry guidance:"];
 
   if (mode === "auth" || mode === "both") {
-    lines.push(
-      `- Set ${chalk.bold("NPM_TOKEN")} in the environment when private packages should be analyzed.`,
-    );
+    lines.push("- Set NPM_TOKEN in the environment when private packages should be analyzed.");
   }
 
   if (mode === "exclude" || mode === "both") {
-    lines.push(
-      `- Use ${chalk.bold("excludePackages")} when internal packages should be skipped instead.`,
-    );
+    lines.push("- Use excludePackages when internal packages should be skipped instead.");
   }
 
   if (mode === "none") {
     lines.push("- No private package handling is configured yet.");
     lines.push(
-      `- Use ${chalk.bold("NPM_TOKEN")} for authenticated private registries, or ${chalk.bold("excludePackages")} to skip internal packages later.`,
+      "- Use NPM_TOKEN for authenticated private registries, or excludePackages to skip internal packages later.",
     );
   }
 
@@ -320,6 +336,9 @@ async function handleInteractive(configPath: string, exists: boolean): Promise<v
 
     const config: AmiConfig = {};
     const privateRegistryMode = await promptPrivateRegistryMode(rl, existingConfig);
+    if (!shouldPromptForExcludePackages(privateRegistryMode)) {
+      config.excludePackages = [];
+    }
 
     for (const field of CONFIG_FIELDS) {
       if (field.key === "excludePackages" && !shouldPromptForExcludePackages(privateRegistryMode)) {
@@ -416,10 +435,7 @@ async function promptPrivateRegistryMode(
   rl: ReturnType<typeof createInterface>,
   existingConfig?: AmiConfig,
 ): Promise<PrivateRegistryMode> {
-  const fallback: PrivateRegistryMode =
-    existingConfig?.excludePackages && existingConfig.excludePackages.length > 0
-      ? "exclude"
-      : "none";
+  const fallback = getPrivateRegistryModeFallback(existingConfig);
 
   while (true) {
     const answer = await rl.question(
@@ -440,8 +456,15 @@ function printPrivateRegistryGuidance(
   indent = "",
   mode: PrivateRegistryMode = "none",
 ): void {
-  const prefix = indent ? `\n${indent}` : "\n";
-  const lines = buildPrivateRegistryGuidance(config, mode).map((line) => `${indent}${line}`);
+  const lines = buildPrivateRegistryGuidance(config, mode).map(
+    (line) => `${indent}${formatGuidanceLine(line)}`,
+  );
 
-  console.log(chalk.dim(`${prefix}${lines.join("\n")}`));
+  console.log(chalk.dim(`\n${lines.join("\n")}`));
+}
+
+function formatGuidanceLine(line: string): string {
+  return line
+    .replaceAll("NPM_TOKEN", chalk.bold("NPM_TOKEN"))
+    .replaceAll("excludePackages", chalk.bold("excludePackages"));
 }
